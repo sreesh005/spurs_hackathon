@@ -20,12 +20,13 @@ import urllib.request
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from catalog import DATA, LIBRARY_PATH, build_library, load_env, load_library
 from live_clips import ClipIndex
+from scoreplay_stream import LiveStream
 
 ROOT = Path(__file__).resolve().parent
 READS_PATH = DATA / "reads.json"
@@ -56,6 +57,7 @@ def _clipper_roots() -> list[Path]:
 
 
 CLIPS = ClipIndex(_clipper_roots())
+STREAM = LiveStream()
 
 
 def _load() -> dict:
@@ -316,6 +318,36 @@ def live_media(name: str) -> FileResponse:
     if not path or not path.is_file():
         raise HTTPException(status_code=404, detail="Clip not found")
     return FileResponse(path, media_type="video/mp4")
+
+
+@app.get("/api/live/stream")
+def live_stream(refresh: bool = False) -> dict:
+    """The ScorePlay recording in progress (Live > Schedule), and where the desk relays its video."""
+    if refresh:
+        STREAM.current(force=True)
+    return STREAM.status()
+
+
+@app.get("/api/live/stream/playlist.m3u8")
+def live_stream_playlist(v: str | None = None) -> Response:
+    try:
+        text = STREAM.playlist(v)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (urllib.error.URLError, OSError) as exc:
+        raise HTTPException(status_code=502, detail=f"ScorePlay playlist: {exc}") from exc
+    return PlainTextResponse(text, media_type="application/vnd.apple.mpegurl", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/live/stream/seg/{path:path}")
+def live_stream_segment(path: str, q: str = "") -> Response:
+    try:
+        data, kind = STREAM.segment(path, q)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (urllib.error.URLError, OSError) as exc:
+        raise HTTPException(status_code=502, detail=f"ScorePlay segment: {exc}") from exc
+    return Response(data, media_type=kind, headers={"Cache-Control": "max-age=3600"})
 
 
 @app.get("/")

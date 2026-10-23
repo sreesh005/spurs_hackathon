@@ -35,9 +35,12 @@ def reset() -> None:
 
 
 class FakeClipper(threading.Thread):
-    def __init__(self, clock: Clock, library: dict, verbose: bool = True):
+    def __init__(self, clock: Clock, library: dict, verbose: bool = True, recording=None):
         super().__init__(name="demo-clipper", daemon=True)
         self.clock, self.library, self.verbose = clock, library, verbose
+        # With the stand-in ScorePlay recording running, clips are logged on it, in seconds into it, like
+        # sarang's `pipeline live` with LIVE_SOURCE=scoreplay. Otherwise on the full match, as before.
+        self.recording = recording
         self.done: set[tuple] = set()
         self.pool = ThreadPoolExecutor(max_workers=2)
         self.write_lock = threading.Lock()
@@ -76,10 +79,15 @@ class FakeClipper(threading.Thread):
         peak_sim = play_time(loop, play)
         peak_unix = self.clock.unix_at(peak_sim)
         offset = match_offset(peak_sim)
+        clock_text = match_clock(offset)
+        media_id = MATCH_MEDIA_ID
+        if self.recording and self.recording.started_at:
+            media_id = self.recording.media_id
+            offset = self.clock.t0 + peak_sim / self.clock.speed - self.recording.started_at  # real seconds into the recording
         before, after = WINDOWS[kind]
         if kind == "replay":
             peak_unix += REPLAY_LAG
-            offset += REPLAY_LAG
+            offset += REPLAY_LAG / (self.clock.speed if media_id != MATCH_MEDIA_ID else 1)
         start_unix, end_unix = peak_unix - before, peak_unix + after
         event_plain = play.event.replace("_", " ").upper()
         caption = play.caption.format(name=name)
@@ -116,7 +124,7 @@ class FakeClipper(threading.Thread):
         if kind == "replay":
             footage.render(mp4, title, "Broadcast replay, slow motion", "REPLAY", seconds=before + after, style="replay")
         else:
-            footage.render(mp4, title, f"Main camera  {match_clock(offset)}", "QUICK CUT" if kind == "quick" else "LIVE CAPTURE",
+            footage.render(mp4, title, f"Main camera  {clock_text}", "QUICK CUT" if kind == "quick" else "LIVE CAPTURE",
                            seconds=before + after, style="quick" if kind == "quick" else "broadcast")
         sidecar = {
             "id": clip_id,
@@ -147,7 +155,7 @@ class FakeClipper(threading.Thread):
         tags = ["source:twelvelabs", f"event:{play.event}", "team:tottenham", f"cut:{cut}",
                 f"confidence:{analysis['confidence']:.2f}", "found_by:rules"] + (["replay"] if kind == "replay" else [])
         writeback = {
-            "media_id": MATCH_MEDIA_ID,
+            "media_id": media_id,
             "log_at": offset,
             "log_range": [offset - 8, offset + 12],
             "players": [int(person["id"])] if person.get("id") else [],
@@ -155,7 +163,7 @@ class FakeClipper(threading.Thread):
         }
         if highlight:
             writeback["upload"] = {"dry_run": True, "name": f"{play.event}_tottenham_{clip_id}.mp4"}
-        line = {"clip": mp4.name, "media_id": MATCH_MEDIA_ID, "cut": cut, "found_by": "rules", "analysis": analysis, "writeback": writeback}
+        line = {"clip": mp4.name, "media_id": media_id, "cut": cut, "found_by": "rules", "analysis": analysis, "writeback": writeback}
         self._append(self.run_file, line)  # the line goes last, so the desk never sees a clip before its file
         self._say(f"{kind:13} {name:10} {event_plain}  -> {mp4.name}")
 

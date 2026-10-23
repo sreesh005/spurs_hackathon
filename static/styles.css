@@ -374,3 +374,15 @@ select {
 .lc-row .lc-count { grid-column: 2; font-style: normal; font-size: 11px; color: var(--ok); letter-spacing: .06em; text-transform: uppercase; }
 .lc-empty { margin-top: 12px; }
 .lc-drawer .shop { display: inline-block; margin-top: 14px; }
+
+/* SCOREPLAY LIVE VIDEO: the recording in the video panel, and the switch under it */
+.live-video video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; }
+.live-video video[hidden], .live-video img[hidden] { display: none; }
+.live-video.sp .live-badge { display: none; }
+.sp-badge { position: absolute; left: 10px; top: 10px; max-width: calc(100% - 20px); background: rgba(0,0,0,.7); border: 1px solid #7fb2ff; color: #cfe0ff; border-radius: 999px; padding: 3px 10px; font-size: 12px; letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.sp-badge[hidden], .sp-golive[hidden] { display: none; }
+.sp-golive { position: absolute; right: 10px; top: 10px; background: var(--brass); color: #1a1408; border: 0; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 600; }
+.lv-switch { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.lv-switch button { border: 1px solid var(--line); background: var(--paper-2); border-radius: 999px; padding: 4px 12px; font-size: 13px; }
+.lv-switch button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.lc-jump { margin-top: 10px; }

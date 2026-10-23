@@ -5,6 +5,7 @@ Same contract the Live dots tab reads (static/live.js):
                      x runs along the pitch (0 = left goal line), y across it, both 0..1
   GET  /video.mjpg   the broadcast with labels on the players (MJPEG; drawn with Pillow when it is installed)
   POST /assign       {labels: {dot_id: "#19"}}: shirt numbers to draw on the video
+  GET  /hls/...      the demo's stand-in for ScorePlay's live recording (demo/recording.py)
 Dots 1-11 are Tottenham in lineup order, 12-22 Man United, 23 the referee.
 """
 
@@ -229,6 +230,23 @@ def make_handler(tracker: Tracker):
                 self.send_response(200)
                 self._cors()
                 self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if path.startswith("/hls/"):
+                from .recording import HLS_DIR
+
+                name = path[len("/hls/"):]
+                target = HLS_DIR / name
+                if "/" in name or not name or not target.is_file():
+                    self.send_error(404)
+                    return
+                data = target.read_bytes()
+                self.send_response(200)
+                self._cors()
+                self.send_header("Content-Type", "application/vnd.apple.mpegurl" if name.endswith(".m3u8") else "video/mp2t")
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()

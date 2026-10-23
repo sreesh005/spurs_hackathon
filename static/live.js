@@ -32,7 +32,18 @@ function livePitchLines() {
 function liveHtml() {
   return `<section class="live">
     <div class="live-top">
-      <div class="live-video"><img id="live-img" alt="" src="${LIVE_URL}/video.mjpg" /><div class="live-badge" id="live-badge">connecting…</div><div class="live-alert" id="live-alert" hidden></div></div>
+      <div class="live-video" id="live-video">
+        <img id="live-img" alt="" src="${LIVE_URL}/video.mjpg" />
+        <video id="sp-video" muted playsinline controls hidden></video>
+        <div class="live-badge" id="live-badge">connecting…</div>
+        <div class="sp-badge" id="sp-badge" hidden></div>
+        <button type="button" class="sp-golive" id="sp-golive" hidden>Back to live</button>
+        <div class="live-alert" id="live-alert" hidden></div>
+      </div>
+      <div class="lv-switch" id="lv-switch">
+        <button type="button" data-lv="scoreplay">ScorePlay live</button><button type="button" data-lv="tracker">Tracker</button>
+        <span class="meta" id="lv-note"></span>
+      </div>
     </div>
     <div class="live-pitch-wrap">
       <div class="live-pitch" id="live-pitch">${livePitchLines()}<div id="live-dots"></div><div class="live-ball" id="live-ball" hidden></div>
@@ -146,6 +157,7 @@ function liveTick() {
 
 function mountLive() {
   livePicker();
+  spMount();
   if (!LIVE.timer) LIVE.timer = setInterval(liveTick, 80);
   if (!LC.timer) LC.timer = setInterval(lcFeedTick, 1500);
   lcFeedTick();
@@ -297,7 +309,8 @@ function liveSheetHtml() {
     ? `<div class="reel-stage lc-stage"><video id="lc-video" controls playsinline preload="metadata" src="${esc(angle.video)}" poster="${esc(angle.thumb || "")}"></video></div>
        <div class="lc-caption"><b>${esc(moment.event_plain)}</b> <span id="lc-cap">${esc(angle.source === "live" && angle.caption ? angle.caption : moment.caption)}</span></div>
        <div class="lc-angles" id="lc-angles">${lcAngleButtons(moment, angle)}</div>
-       <p class="meta lc-why" id="lc-why">${esc(lcWhy(moment))}</p>`
+       <p class="meta lc-why" id="lc-why">${esc(lcWhy(moment))}</p>
+       ${spJumpHtml(moment)}`
     : LC.data[pid] ? "" : `<div class="reel-stage lc-stage lc-wait">Loading…</div>`;
   return `<div class="desk-side">
     <section class="drawer lc-drawer" id="live-reel">
@@ -382,3 +395,159 @@ document.addEventListener("click", (event) => {
   liveSheet();
   lcPlay();
 });
+
+
+/* ---------- SCOREPLAY LIVE VIDEO: the recording ScorePlay makes of the feed, played in the video panel ----------
+   /api/live/stream says which recording is live; the desk relays its HLS (scoreplay_stream.py), played with hls.js.
+   The auto-clipper logs clips in seconds into that recording, so a clip can jump this player to its moment. */
+
+const SP = { info: null, hls: null, video: null, mode: null, timer: null, pending: null };
+try { SP.mode = localStorage.getItem("liveView"); } catch (e) { SP.mode = null; }
+
+function spCheck(force) {
+  return fetch("/api/live/stream" + (force ? "?refresh=1" : ""), { cache: "no-store" }).then((r) => r.json()).then((info) => {
+    const was = SP.info && SP.info.ok ? SP.info.playlist + SP.info.media_id : "";
+    SP.info = info;
+    if (!SP.mode) SP.mode = info.ok ? "scoreplay" : "tracker";
+    if (was !== (info.ok ? info.playlist + info.media_id : "")) spDetach();
+    spApply();
+  }).catch(() => {});
+}
+
+function spMount() {
+  if (!SP.timer) SP.timer = setInterval(() => { if (state.tab === "live") spCheck(); }, 15000);
+  spCheck();
+}
+
+function spDetach() {
+  if (SP.hls) { try { SP.hls.destroy(); } catch (e) {} }
+  SP.hls = null; SP.video = null;
+}
+
+function spAttach(video) {
+  if (SP.video === video && (SP.hls || video.getAttribute("src"))) return;
+  spDetach();
+  SP.video = video;
+  const src = SP.info.playlist;
+  const ready = () => {
+    if (SP.pending != null) { const t = SP.pending; SP.pending = null; spSeek(t); }
+    else video.play().catch(() => {});
+  };
+  if (window.Hls && Hls.isSupported()) {
+    const hls = new Hls({ liveSyncDurationCount: 3, maxBufferLength: 20 });
+    hls.on(Hls.Events.MANIFEST_PARSED, ready);
+    hls.on(Hls.Events.ERROR, (_e, data) => {
+      if (!data.fatal) return;
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) setTimeout(() => hls.startLoad(), 3000);
+      else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+      else { spDetach(); spBadge("ScorePlay video stopped: " + (data.details || "error")); }
+    });
+    hls.loadSource(src);
+    hls.attachMedia(video);
+    SP.hls = hls;
+  } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+    video.src = src; // Safari plays HLS itself
+    video.addEventListener("loadedmetadata", ready, { once: true });
+  } else {
+    spBadge("This browser can't play the ScorePlay video");
+  }
+}
+
+function spBadge(text) {
+  const badge = document.getElementById("sp-badge");
+  if (badge) { badge.hidden = !text; badge.textContent = text || ""; }
+}
+
+function spApply() {
+  const box = document.getElementById("live-video");
+  if (!box) return;
+  const img = document.getElementById("live-img"), video = document.getElementById("sp-video");
+  const onSp = SP.mode === "scoreplay";
+  box.classList.toggle("sp", onSp);
+  document.querySelectorAll("#lv-switch [data-lv]").forEach((b) => b.classList.toggle("on", b.dataset.lv === SP.mode));
+  const note = document.getElementById("lv-note");
+  if (note) note.textContent = onSp
+    ? "ScorePlay's recording of the feed. It runs a few seconds behind the dots."
+    : "The tracker's view: the broadcast with a box on each player, in step with the dots.";
+  // the tracker's MJPEG keeps a connection open: only hold it while it is on screen
+  if (img) {
+    img.hidden = onSp;
+    if (onSp) img.removeAttribute("src");
+    else if (!img.getAttribute("src")) img.src = `${LIVE_URL}/video.mjpg`;
+  }
+  if (video) video.hidden = !onSp;
+  if (!onSp) { if (video) video.pause(); spBadge(""); return; }
+  if (!SP.info || !SP.info.ok) { spDetach(); spBadge(SP.info ? "No ScorePlay video: " + SP.info.note : "Looking for ScorePlay's recording…"); return; }
+  spBadge(`ScorePlay live · ${SP.info.name}${SP.info.media_id ? " · media " + SP.info.media_id : ""}`);
+  if (video) spAttach(video);
+  spLiveButton();
+}
+
+function spLiveEdge() {
+  const video = SP.video;
+  if (!video) return null;
+  if (SP.hls && Number.isFinite(SP.hls.liveSyncPosition)) return SP.hls.liveSyncPosition;
+  const r = video.seekable;
+  return r && r.length ? r.end(r.length - 1) : null;
+}
+
+function spLiveButton() {
+  const btn = document.getElementById("sp-golive");
+  if (!btn) return;
+  const edge = spLiveEdge();
+  const behind = SP.video && edge != null ? edge - SP.video.currentTime : 0;
+  btn.hidden = !(SP.mode === "scoreplay" && behind > 12);
+  if (!btn.hidden) btn.textContent = `${Math.round(behind)}s back · Back to live`;
+}
+
+function spSeek(seconds) {
+  const video = SP.video;
+  if (!video) { SP.pending = seconds; return; }
+  const r = video.seekable;
+  if (!r || !r.length) { SP.pending = seconds; return; }
+  video.currentTime = Math.max(r.start(0), Math.min(seconds, r.end(r.length - 1)));
+  video.play().catch(() => {});
+}
+
+function spClock(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0");
+}
+
+function spJumpHtml(moment) {
+  const m = moment && moment.match;
+  if (!m || !SP.info || !SP.info.ok || Number(m.media_id) !== Number(SP.info.media_id)) return "";
+  const at = Math.max(0, m.start - 5); // a few seconds of build-up before the key moment
+  return `<button type="button" class="ghost lc-jump" data-sp-jump="${at}">Watch it in the live recording · ${esc(spClock(at))}</button>`;
+}
+
+setInterval(() => { if (state.tab === "live") spLiveButton(); }, 1000);
+
+document.addEventListener("click", (event) => {
+  if (state.tab !== "live") return;
+  const node = event.target?.nodeType === 1 ? event.target : event.target?.parentElement;
+  const view = node?.closest?.("[data-lv]");
+  if (view) {
+    event.preventDefault();
+    SP.mode = view.dataset.lv;
+    try { localStorage.setItem("liveView", SP.mode); } catch (e) {}
+    spApply();
+    if (SP.mode === "scoreplay" && (!SP.info || !SP.info.ok)) spCheck(true);
+    return;
+  }
+  const jump = node?.closest?.("[data-sp-jump]");
+  if (jump) {
+    event.preventDefault(); event.stopPropagation();
+    SP.mode = "scoreplay";
+    spApply();
+    spSeek(Number(jump.dataset.spJump));
+    document.getElementById("live-video")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return;
+  }
+  if (node?.closest?.("#sp-golive")) {
+    event.preventDefault();
+    const edge = spLiveEdge();
+    if (edge != null && SP.video) { SP.video.currentTime = edge; SP.video.play().catch(() => {}); }
+  }
+}, true);

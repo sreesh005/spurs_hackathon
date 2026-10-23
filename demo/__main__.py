@@ -27,6 +27,7 @@ def main() -> None:
     ap.add_argument("--speed", type=float, default=1.0, help="how fast the scripted match runs")
     ap.add_argument("--no-desk", action="store_true", help="run only the fake tracker and clipper")
     ap.add_argument("--real-library", action="store_true", help="with --no-desk: name players from data/library.json")
+    ap.add_argument("--real-scoreplay", action="store_true", help="play ScorePlay's real live recording (needs SCOREPLAY_API_KEY) instead of the demo one")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
@@ -34,7 +35,7 @@ def main() -> None:
     if not args.no_desk:
         os.environ["NEXT_POST_DEMO"] = "1"  # read by server.py at import
 
-    from demo import clipper, footage, tracker
+    from demo import clipper, footage, recording, tracker
     from demo.fixture import library_for_sim
     from demo.scenario import Clock
 
@@ -47,10 +48,18 @@ def main() -> None:
         tracker.serve(tracker.Tracker(clock, library), args.host, args.tracker_port)
     except OSError as exc:
         raise SystemExit(f"demo: port {args.tracker_port} is busy ({exc.strerror}). Is another demo or the real tracker running?")
-    clipper.reset()
-    clipper.FakeClipper(clock, library, verbose=not args.quiet).start()
-
     live = f"http://{args.host}:{args.tracker_port}"
+    rec = recording.Recording(live)
+    if not args.no_desk and not args.real_scoreplay and rec.start():
+        # the desk plays this the way it plays ScorePlay's own recording of the feed
+        os.environ["SCOREPLAY_LIVE_PLAYLIST"] = f"{live}/hls/original.m3u8"
+        os.environ["SCOREPLAY_LIVE_MEDIA_ID"] = str(rec.media_id)
+        os.environ["SCOREPLAY_LIVE_NAME"] = "liveGameFeed (demo recording)"
+    else:
+        rec = None
+    clipper.reset()
+    clipper.FakeClipper(clock, library, verbose=not args.quiet, recording=rec).start()
+
     if args.no_desk:
         sep = ";" if os.name == "nt" else ":"
         print(f"demo: tracker at {live}, clips written to {clipper.ROOT}")
@@ -64,7 +73,11 @@ def main() -> None:
 
     print(f"demo: open http://{args.host}:{args.port}/?live={live}")
     print("demo: the first play lands ~14s after start; a full cycle of 5 plays takes ~2 minutes.")
-    uvicorn.run("server:app", host=args.host, port=args.port, log_level="warning")
+    try:
+        uvicorn.run("server:app", host=args.host, port=args.port, log_level="warning")
+    finally:
+        if rec:
+            rec.stop()
 
 
 if __name__ == "__main__":
