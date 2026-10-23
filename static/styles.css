@@ -389,3 +389,24 @@ select {
 .lc-quote { margin: 6px 0 0; font-style: italic; color: var(--text); font-size: 14px; }
 .lc-origin { display: flex; gap: 6px; align-items: center; margin: 6px 0 0; }
 .lc-from { flex-basis: 100%; display: flex; gap: 6px; align-items: center; }
+
+/* PLAYER LIST: the Live tab without dots */
+.live-placeholder { display: grid; place-items: center; gap: 4px; aspect-ratio: 105 / 40; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); text-align: center; padding: 14px;
+  background: repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0 5%, rgba(0,0,0,0.06) 5% 10%), linear-gradient(#1a2b1f, #131c16); }
+.live-placeholder b { font-family: "Barlow Condensed", sans-serif; font-size: 22px; letter-spacing: .05em; color: var(--text); font-weight: 600; }
+.live-placeholder span { font-size: 13px; }
+.lc-roster-head { margin: 14px 0 6px; }
+.lc-roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; }
+.lc-player { display: grid; grid-template-columns: 34px auto 1fr auto; grid-template-rows: auto auto; column-gap: 8px; align-items: center; text-align: left; border: 1px solid var(--line); background: var(--paper-2); border-radius: 12px; padding: 6px 10px; }
+.lc-player:hover, .lc-player.on { border-color: var(--brass); }
+.lc-player.on { box-shadow: inset 0 0 0 1px var(--brass); }
+.lc-player img, .lc-player i { grid-row: span 2; width: 34px; height: 34px; border-radius: 50%; object-fit: cover; object-position: top; background: #2a2c24; display: grid; place-items: center; font-style: normal; font-weight: 700; }
+.lc-player b { font-family: "Barlow Condensed", sans-serif; color: var(--brass); font-size: 16px; }
+.lc-player span { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lc-player em { font-style: normal; color: var(--muted); font-size: 11px; }
+.lc-player u { grid-column: 2 / -1; text-decoration: none; font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+.lc-player u.has { color: var(--ok); font-weight: 600; }
+.lc-player.bench { opacity: .85; }
+.lc-player.fresh { animation: lc-pulse 1.1s ease-out infinite; }
+.lc-bench-label { grid-column: 1 / -1; margin-top: 6px; }
+.live-list .live-video video { aspect-ratio: 16 / 9; }

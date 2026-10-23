@@ -69,11 +69,13 @@ python -c "from catalog import build_library; build_library()"
 
 Stop the server with Ctrl+C, then start it again with the uvicorn command above. A change to `catalog.py` needs that restart. A change to `static/` shows up on a hard refresh of the browser.
 
-## Live dots: each player's clips as they happen
+## Live: each player's clips as they happen
 
-The **Live dots** tab shows the tracker's dots on a pitch. Click a Spurs dot and the drawer opens that player's live collection:
+The **Live** tab shows ScorePlay's live recording of the feed, a placeholder where live player positions will go, and the Tottenham squad. Each name shows how many clips the auto-clipper has captured for him. Tap a name and the drawer opens his live collection. (With a tracker running, `?dots=1` shows the earlier dots view, where you click a dot instead.)
 
-- **Captured live tonight.** Every play the auto-clipper (`sarang/`) cut and TwelveLabs tagged him in, newest first. A clip lands seconds after it is analyzed. The dot shows a count and pulses when a new one arrives, and a "Just captured" row under the pitch lists the latest.
+The drawer:
+
+- **Captured live tonight.** Every play the auto-clipper (`sarang/`) cut and TwelveLabs tagged him in, newest first. A clip lands seconds after it is analyzed. His name shows a count and pulses when a new one arrives, and a "Just captured" row lists the latest.
 - **From ScorePlay.** Until he has a live clip, the drawer falls back to his pre-loaded ScorePlay clips. Once he has one, those stay below as "Also in ScorePlay".
 - **Every angle of a play together.** Each play shows one button per angle: the broadcast, its replay, phone uploads, and ScorePlay edits (16:9, 9:16). The line under them says why they were grouped.
 

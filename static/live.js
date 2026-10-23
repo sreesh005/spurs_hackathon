@@ -4,6 +4,9 @@
    Dots are matched to the lineup by position as a first guess; use the picker under the pitch to correct one.
    Clip data: /api/live/feed (counts per player, polled) and /api/live/player/{id} (server.py, live_clips.py). */
 
+// The dots need a tracker (hack_live_dots.py). Without one, the tab shows the ScorePlay video, a placeholder
+// where the pitch goes, and a list of players to tap. Add ?dots=1 to the URL for the dots view.
+const LIVE_DOTS = new URLSearchParams(location.search).has("dots");
 const LIVE_URL = (new URLSearchParams(location.search).get("live")) || localStorage.getItem("liveUrl") || "http://127.0.0.1:8766";
 const LIVE = { state: null, ok: false, assign: {}, picked: null, guessed: false, timer: null, miss: 0 };
 try { LIVE.assign = JSON.parse(localStorage.getItem("liveAssign") || "{}"); } catch (e) { LIVE.assign = {}; }
@@ -30,6 +33,7 @@ function livePitchLines() {
 }
 
 function liveHtml() {
+  if (!LIVE_DOTS) return liveRosterHtml();
   return `<section class="live">
     <div class="live-top">
       <div class="live-video" id="live-video">
@@ -158,12 +162,13 @@ function liveTick() {
 }
 
 function mountLive() {
-  livePicker();
+  if (LIVE_DOTS) livePicker();
   spMount();
-  if (!LIVE.timer) LIVE.timer = setInterval(liveTick, 80);
+  if (LIVE_DOTS && !LIVE.timer) LIVE.timer = setInterval(liveTick, 80);
   if (!LC.timer) LC.timer = setInterval(lcFeedTick, 1500);
   lcFeedTick();
   lcTicker();
+  lcRoster();
   const clip = document.getElementById("lc-video");
   if (clip) lcAttach(clip);
   if (state.focus) lcLoad(Number(state.focus));
@@ -223,6 +228,7 @@ function lcFeedTick() {
     }
     LC.seen = ids;
     lcTicker();
+    lcRoster();
     if (feed.version !== LC.version) {
       LC.version = feed.version;
       if (state.focus) lcLoad(Number(state.focus), true);
@@ -306,7 +312,7 @@ function liveSheetHtml() {
   const pid = Number(state.focus);
   const focus = liveName(pid);
   if (!focus) {
-    return `<div class="desk-side"><p class="lede">Click a Spurs dot. His clips from tonight open here, each with every angle we have of the play.</p></div>`;
+    return `<div class="desk-side"><p class="lede">Tap a player. His clips from tonight open here, each with every angle we have of the play.</p></div>`;
   }
   if (!LC.data[pid]) lcLoad(pid);
   const { moment, angle } = lcSelected(pid);
@@ -401,6 +407,7 @@ function lcOpen(pid, momentId) {
   state.focus = Number(pid); state.reelCut = 0;
   if (momentId) LC.sel[pid] = { moment: momentId };
   liveSheet();
+  lcRoster();
   if (LC.data[pid]) lcPlay();
   lcLoad(Number(pid), true);
 }
@@ -431,6 +438,7 @@ document.addEventListener("click", (event) => {
 
 const SP = { info: null, hls: null, video: null, mode: null, timer: null, pending: null };
 try { SP.mode = localStorage.getItem("liveView"); } catch (e) { SP.mode = null; }
+if (!LIVE_DOTS) SP.mode = "scoreplay"; // the player-list layout only has the ScorePlay video
 
 function spCheck(force) {
   return fetch("/api/live/stream" + (force ? "?refresh=1" : ""), { cache: "no-store" }).then((r) => r.json()).then((info) => {
@@ -495,7 +503,7 @@ function spApply() {
   document.querySelectorAll("#lv-switch [data-lv]").forEach((b) => b.classList.toggle("on", b.dataset.lv === SP.mode));
   const note = document.getElementById("lv-note");
   if (note) note.textContent = onSp
-    ? "ScorePlay's recording of the feed. It runs a few seconds behind the dots."
+    ? (LIVE_DOTS ? "ScorePlay's recording of the feed. It runs a few seconds behind the dots." : "ScorePlay's live recording of the feed. The auto-clipper watches the same recording.")
     : "The tracker's view: the broadcast with a box on each player, in step with the dots.";
   // the tracker's MJPEG keeps a connection open: only hold it while it is on screen
   if (img) {
@@ -579,3 +587,46 @@ document.addEventListener("click", (event) => {
     if (edge != null && SP.video) { SP.video.currentTime = edge; SP.video.play().catch(() => {}); }
   }
 }, true);
+
+
+/* ---------- PLAYER LIST: what the Live tab shows instead of the dots ---------- */
+
+function liveRosterHtml() {
+  return `<section class="live live-list">
+    <div class="live-top">
+      <div class="live-video sp" id="live-video">
+        <video id="sp-video" muted playsinline controls></video>
+        <div class="sp-badge" id="sp-badge">Looking for ScorePlay's recording…</div>
+        <button type="button" class="sp-golive" id="sp-golive" hidden>Back to live</button>
+      </div>
+      <p class="meta" id="lv-note"></p>
+    </div>
+    <div class="live-pitch-wrap">
+      <div class="live-placeholder">
+        <b>Live player positions</b>
+        <span>Placeholder. Player tracking plugs in here.</span>
+      </div>
+      <div class="lc-roster-head"><span class="kicker">Tottenham · tap a player for his clips</span></div>
+      <div class="lc-roster" id="lc-roster"></div>
+      <div class="lc-ticker" id="lc-ticker"></div>
+      <button type="button" class="lc-toast" id="lc-toast" hidden></button>
+    </div>
+  </section>`;
+}
+
+function lcRoster() {
+  const box = document.getElementById("lc-roster");
+  if (!box) return;
+  const club = state.data.clubs.find((c) => c.id === "thfc");
+  if (!club) { box.innerHTML = `<span class="meta">No Tottenham squad in this library.</span>`; return; }
+  const row = (p, bench) => {
+    const n = LC.counts[String(p.id)] || 0;
+    const fresh = (LC.fresh[String(p.id)] || 0) > Date.now();
+    const on = Number(state.focus) === Number(p.id);
+    const face = p.thumb ? `<img src="${esc(p.thumb)}" alt="" />` : `<i>${esc((p.short || "?").slice(0, 1))}</i>`;
+    return `<button type="button" class="lc-player ${on ? "on" : ""} ${fresh ? "fresh" : ""} ${bench ? "bench" : ""}" data-lc-player="${p.id}">
+      ${face}<b>${esc(p.number ? "#" + p.number : "")}</b><span>${esc(p.short)}</span><em>${esc(p.pos || "")}</em>
+      <u class="${n ? "has" : ""}">${n ? n + (n === 1 ? " clip" : " clips") : "no clips yet"}</u></button>`;
+  };
+  box.innerHTML = club.lineup.map((p) => row(p, false)).join("") + (club.bench.length ? `<span class="lc-bench-label meta">Bench</span>` : "") + club.bench.map((p) => row(p, true)).join("");
+}

@@ -4,7 +4,7 @@
    Page shell: static/index.html. Look: static/styles.css. */
 
 const TABS = [
-  ["live", "Live dots"],
+  ["live", "Live"],
   ["lineup", "Lineup"],
   ["best", "Best of the night"],
   ["underrated", "Underrated"],
