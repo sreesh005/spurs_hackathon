@@ -14,3 +14,6 @@
 {"wall": "13:55:04", "stream_t": 184.0, "pattern": "switch", "score": 0.8, "detail": "ball swung from one wing to the other", "team": "mnu"}
 {"wall": "13:55:04", "stream_t": 184.09, "pattern": "counter", "score": 0.7, "detail": "3 attackers up, 4 defenders between ball and goal", "team": "tot"}
 {"wall": "13:55:08", "stream_t": 187.95, "pattern": "press", "score": 1.0, "detail": "5 defenders closing on the ball carrier", "team": "mnu"}
+{"wall": "13:55:19", "stream_t": 199.27, "pattern": "linebreak", "score": 1.0, "detail": "5 defenders now behind the ball", "team": "mnu"}
+{"wall": "13:55:32", "stream_t": 212.2, "pattern": "overlap", "score": 0.7, "detail": "runner on the outside, carrier marked", "team": "mnu"}
+{"wall": "13:55:40", "stream_t": 219.96, "pattern": "counter", "score": 0.8, "detail": "4 attackers up, 4 defenders between ball and goal", "team": "tot"}
