@@ -5,6 +5,7 @@
 
 const TABS = [
   ["live", "Live dots"],
+  ["demo", "Demo clip"],
   ["lineup", "Lineup"],
   ["best", "Best of the night"],
   ["underrated", "Underrated"],
@@ -24,7 +25,7 @@ const state = {
   data: null,
   club: "sas",
   audience: "matchday",
-  tab: "live",
+  tab: new URLSearchParams(location.search).get("view") === "demo" ? "demo" : "live",
   focus: null,
   angle: {},
   reel: null,
@@ -50,6 +51,8 @@ const people = () => [...club().lineup, ...club().bench];
 const focused = () => people().find((person) => Number(person.id) === Number(state.focus));
 const isClip = (play) => play.mode !== "context" && play.mode !== "broadcast";
 const isTalk = (play) => TALK.test(titleOf(play).toLowerCase());
+// the two tabs that use the live layout: the tracker feed, and the recorded 60s demo clip
+const liveDesk = () => state.tab === "live" || state.tab === "demo";
 const sideOpen = () => !!focused() || !!state.query.trim();
 
 function titleOf(play) {
@@ -250,7 +253,7 @@ function sheetHtml() {
       ? empty("Nothing in the library matches that.")
       : "";
   if (!focus) {
-    const hint = state.tab === "live" ? "Players the announcer names show up here with their clips. Or click a dot on the map." : "Click a shirt. The reel stays open while you pick clips.";
+    const hint = liveDesk() ? "Players the announcer names show up here with their clips. Or click a dot on the map." : "Click a shirt. The reel stays open while you pick clips.";
     return `<div class="desk-side">${pulled}<p class="lede">${hint}</p></div>`;
   }
   const reel = topReel(focus.id);
@@ -457,7 +460,7 @@ function renderChrome() {
 
 function render() {
   try {
-    const live = state.tab === "live";
+    const live = liveDesk();
     if (live && state.club !== "thfc" && state.data.clubs.some((item) => item.id === "thfc")) {
       state.club = "thfc";
       state.focus = null;
@@ -465,9 +468,10 @@ function render() {
     renderChrome();
     const rest = RENDER[state.tab]?.() || "";
     document.body.classList.toggle("live-mode", live);
-    $("main").innerHTML = `<div class="desk ${sideOpen() ? "with-reel" : ""}">${live ? liveHtml() : lineupHtml()}${sheetHtml()}</div>${rest ? `<section id="rest">${rest}</section>` : ""}`;
+    $("main").innerHTML = `<div class="desk ${sideOpen() ? "with-reel" : ""}">${state.tab === "demo" ? demoHtml() : live ? liveHtml() : lineupHtml()}${sheetHtml()}</div>${rest ? `<section id="rest">${rest}</section>` : ""}`;
     mountReel();
-    if (live) mountLive();
+    if (state.tab === "demo") mountDemo();
+    else if (live) mountLive();
   } catch (error) {
     const note = document.createElement("p");
     note.className = "status";
@@ -486,13 +490,13 @@ function renderSheet() {
   document.querySelector(".desk")?.classList.toggle("with-reel", sideOpen());
   document.querySelectorAll(".court [data-player], .bench [data-player]").forEach((button) => button.classList.toggle("on", Number(button.dataset.player) === Number(state.focus)));
   mountReel();
-  if (state.tab === "live") liveClips();
+  if (liveDesk()) liveClips();
 }
 
 function focusPlayer(id) {
   state.focus = id == null ? null : Number(id);
   state.reelCut = 0;
-  if (state.tab === "lineup" || state.tab === "live" || id == null) renderSheet();
+  if (state.tab === "lineup" || liveDesk() || id == null) renderSheet();
   else {
     state.tab = "lineup";
     render();
@@ -637,7 +641,7 @@ $("search").addEventListener("keydown", (event) => {
   const hit = findHit(state.query);
   if (!hit) return;
   const id = hit.named_id || hit.heroes?.matchday?.id || null;
-  if (state.tab !== "live" && hit.club !== state.club) {
+  if (!liveDesk() && hit.club !== state.club) {
     Object.assign(state, { club: hit.club, focus: id, reelCut: 0, tab: "lineup" });
     render();
   } else focusPlayer(id);

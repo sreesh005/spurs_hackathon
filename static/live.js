@@ -354,7 +354,14 @@ function liveTxTick() {
   }).catch(() => { if (++LIVE.tx.miss > 3 && !LIVE.tx.clip) say("no commentary feed — run commentary.py", false); });
 }
 
+// the Live and Demo tabs share the transcript box; start it clean when switching between them
+function liveTxReset() {
+  if (LIVE.tx.tab === state.tab) return;
+  Object.assign(LIVE.tx, { tab: state.tab, lines: [], mentions: [], shown: 0, lastPos: 0 });
+}
+
 function mountLive() {
+  liveTxReset();
   livePicker();
   liveClips();
   liveChips();
@@ -382,7 +389,7 @@ function liveFlip() {
 // ---------------------------------------------------------------- events (capture phase, ahead of the desk's own click handler)
 
 document.addEventListener("click", (event) => {
-  if (state.tab !== "live") return;
+  if (!liveDesk()) return;
   const hit = (selector) => event.target.closest?.(selector);
   const stop = () => { event.preventDefault(); event.stopPropagation(); };
   let el;
