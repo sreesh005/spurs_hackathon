@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+data/
+_catalog.json
+_summary.json
+_event.json
+_players.txt
