@@ -19,6 +19,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
+
 from . import analyze, config, feed, rules, scoreplay_live, signals, sweep, tl_store, writeback
 
 RUNS = config.ROOT / "runs"
@@ -66,10 +68,17 @@ class Live:
         idle_since = time.time()
         try:
             while time.time() < stop:
-                new = self.buf.poll()
+                try:
+                    new = self.buf.poll()
+                    done = not new and self.finished(time.time() - idle_since)
+                except httpx.TransportError as e:  # a dropped connection or timeout: try again next tick
+                    print(f"  network hiccup ({type(e).__name__}), retrying")
+                    self.stats["network_retries"] += 1
+                    time.sleep(2)
+                    continue
                 if new:
                     idle_since = time.time()
-                elif self.finished(time.time() - idle_since):
+                elif done:
                     print("recording finished")
                     break
                 for seg in new:
@@ -139,6 +148,10 @@ class Live:
             a = run["analysis"]
             print(f"  TL     {mp4.stem}: {a['event_type']} ({a['team']}) highlight={a['is_highlight']} "
                   f"conf={a['confidence']:.2f}: {a['caption']}")
+            if a.get("commentary_sentiment"):
+                print(f"         commentary {a['commentary_sentiment']} "
+                      f"(excitement {a.get('commentator_excitement', 0):.2f}, {', '.join(a.get('commentary_tone') or []) or 'no tone'})"
+                      + (f': "{a["commentary_quote"]}"' if a.get("commentary_quote") else ""))
             if cut == "full":
                 self.last_caption = a["caption"]
             result = writeback.deliver(run, mp4, cut, excitement, found_by, tuple(self.cfg["skip_event_types"]),

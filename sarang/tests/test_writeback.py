@@ -94,3 +94,21 @@ def test_player_hyphenated_surname_heard_alone(fake):
     """Commentary often says just "Solanke": that must match "Solanke-Mitchell"."""
     a = make_run(commentary_names=["Solanke"])["analysis"]
     assert writeback.player_ids(a) == [1]
+
+
+def test_sentiment_tags_and_quote_in_description(fake):
+    run = make_run(commentary_quote='"What a finish!"', commentary_sentiment="positive",
+                   commentator_excitement=0.9, commentary_tone=["praise", "disbelief"])
+    writeback.deliver(run, Path("missing.mp4"))
+    log, upload = fake.calls[0][2]["video_logs"][0]["log"], fake.calls[1][2]
+    for tag in ("sentiment:positive", "commentator_excitement:0.90", "tone:praise", "tone:disbelief"):
+        assert tag in log["raw_tags"] and tag in upload["raw_tags"]
+    assert log["comment"] == upload["description"] == 'Solanke equalizes.\nCommentary: "What a finish!"'
+
+
+def test_older_analysis_without_sentiment(fake):
+    """football-v2 runs (and empty quotes) still write: no sentiment tags, caption only."""
+    writeback.deliver(make_run(commentary_quote=""), Path("missing.mp4"))
+    log = fake.calls[0][2]["video_logs"][0]["log"]
+    assert log["comment"] == "Solanke equalizes."
+    assert not any(t.startswith(("sentiment:", "tone:", "commentator_")) for t in log["raw_tags"])
