@@ -401,3 +401,4 @@ select {
 .stage.m-map .live-pitch { height: 100%; width: auto; aspect-ratio: 105 / 68; max-width: 100%; max-height: 100%; border: 0; border-radius: 0; }
 .live-pitch-wrap > .swap { display: none; } .stage.m-pip .live-pitch-wrap > .swap { display: block; }
 .stage.m-video .live-video > .swap, .stage.m-pip .live-video > .swap { display: none; }
+.bar-right { display: flex; gap: 8px; } .bar-right button { padding: 6px 14px; font-size: 13px; }

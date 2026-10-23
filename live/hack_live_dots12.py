@@ -22,7 +22,7 @@ W, H = 1280, 720
 ap = argparse.ArgumentParser()
 ap.add_argument("--src", default=FEED); ap.add_argument("--model", default="yolov8s.pt"); ap.add_argument("--imgsz", type=int, default=960)
 ap.add_argument("--device", default=""); ap.add_argument("--delay", type=float, default=5.0)
-ap.add_argument("--serve", type=int, default=0); ap.add_argument("--testalert", action="store_true"); ap.add_argument("--loop", action="store_true"); ap.add_argument("--hgate", type=float, default=0.3); ap.add_argument("--noshow", action="store_true"); ap.add_argument("--out", default=""); ap.add_argument("--seconds", type=float, default=0)
+ap.add_argument("--serve", type=int, default=0); ap.add_argument("--testalert", action="store_true"); ap.add_argument("--loop", action="store_true"); ap.add_argument("--nobox", action="store_true", help="clean video: no boxes or numbers drawn on the picture (tracking and dots are unaffected)"); ap.add_argument("--hgate", type=float, default=0.3); ap.add_argument("--noshow", action="store_true"); ap.add_argument("--out", default=""); ap.add_argument("--seconds", type=float, default=0)
 a = ap.parse_args()
 from ultralytics import YOLO
 import torch
@@ -536,6 +536,7 @@ for fn in (producer, tracker, worker, calib_worker, ball_worker): threading.Thre
 
 PE = PT.Engine(); ALERTS = []; ALERT_SECS = 5.0
 # ============================ tiny web server for the Next Post UI: /state.json (dots) and /video.mjpg (broadcast) ============================
+BOXES = [not a.nobox]            # boxes drawn on the video; the page has a button for it
 LABELS = {}                      # dot id -> shirt number text, sent by the Next Post UI
 LIVE = {"json": b'{"ready": false, "players": [], "n": 0}', "jpg": None, "n": 0}
 FRAMES = {}                      # frame number -> jpeg, so the page can fetch exactly the picture that goes with a given /state.json
@@ -546,7 +547,12 @@ if a.serve:
         def _cors(self): self.send_header("Access-Control-Allow-Origin", "*"); self.send_header("Access-Control-Allow-Headers", "Content-Type"); self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS"); self.send_header("Cache-Control", "no-store")
         def do_OPTIONS(self): self.send_response(204); self._cors(); self.end_headers()
         def do_POST(self):
-            if self.path.startswith("/assign"):
+            if self.path.startswith("/boxes"):
+                try:
+                    n = int(self.headers.get("Content-Length", 0)); body = json.loads(self.rfile.read(n) or b"{}"); BOXES[0] = bool(body.get("on", True))
+                    self.send_response(200); self._cors(); self.end_headers(); self.wfile.write(b"ok")
+                except Exception: self.send_response(400); self._cors(); self.end_headers()
+            elif self.path.startswith("/assign"):
                 try:
                     n = int(self.headers.get("Content-Length", 0)); body = json.loads(self.rfile.read(n) or b"{}")
                     LABELS.clear(); LABELS.update({int(k): str(v)[:12] for k, v in (body.get("labels") or {}).items()})
@@ -614,7 +620,7 @@ while not STOP:
         v = rec["small"].copy(); s_ = VW / W
         with DLOCK: dets = [d_ for d_ in DET if abs(d_["t"] - t_d) < 1.5]
         bef = [d_ for d_ in dets if d_["t"] <= t_d]; aft = [d_ for d_ in dets if d_["t"] > t_d]
-        if bef and aft:
+        if bef and aft and BOXES[0]:
             d0, d1 = bef[-1], aft[0]; u = (t_d - d0["t"]) / max(1e-3, d1["t"] - d0["t"]); b1 = {b[4]: b for b in d1["boxes"]}
             for x1, y1, x2, y2, tid, lab in d0["boxes"]:
                 if tid in b1:
@@ -685,7 +691,7 @@ while not STOP:
             ok_, jb = cv2.imencode(".jpg", v, [cv2.IMWRITE_JPEG_QUALITY, 72])
             if ok_: LIVE["jpg"] = jb.tobytes(); LIVE["n"] += 1; FRAMES[LIVE["n"]] = LIVE["jpg"]; FRAMES.pop(LIVE["n"] - 40, None)
             import json as _json
-            LIVE["json"] = _json.dumps({"n": LIVE["n"], "ready": True, "clip": ({"pos": round((rec["i"] % CLIP["frames"]) / CLIP["fps"], 2), "dur": round(CLIP["frames"] / CLIP["fps"], 2)} if (rec and CLIP["frames"]) else None), "cutaway": not okr, "t": round(t_d, 2), "players": drawn,
+            LIVE["json"] = _json.dumps({"n": LIVE["n"], "boxes": BOXES[0], "ready": True, "clip": ({"pos": round((rec["i"] % CLIP["frames"]) / CLIP["fps"], 2), "dur": round(CLIP["frames"] / CLIP["fps"], 2)} if (rec and CLIP["frames"]) else None), "cutaway": not okr, "t": round(t_d, 2), "players": drawn,
                                         "alerts": [{"pattern": al["pattern"], "title": al["title"], "detail": al["detail"], "ids": al["ids"], "age": round(tn - al["shown"], 2)} for al in ALERTS], "ball": ({"x": round(bl[0] / 105, 4), "y": round(bl[1] / 68, 4)} if bl else None)}).encode()
         if show_card:
             if tn - pstart > 8.0 * (pidx + 1) and pidx < len(prompts) - 1: pidx += 1

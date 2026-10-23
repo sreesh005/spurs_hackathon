@@ -332,7 +332,6 @@ function sheetHtml() {
         </div>
         <button class="ghost" type="button" data-close-reel>Close</button>
       </div>
-      ${statLine(focus)}
       <a class="shop" href="${esc(focus.shop || "#")}" target="_blank" rel="noreferrer">Shop the jersey</a>
       ${
         reel.length
@@ -854,7 +853,7 @@ document.addEventListener(
 );
 
 document.body.addEventListener("click", (event) => {
-  const clubButton = event.target.closest("[data-club]");
+  const clubButton = event.target.closest("[data-club]:not(body)");
   if (clubButton) {
     state.club = clubButton.dataset.club;
     state.focus = null;

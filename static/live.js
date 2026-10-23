@@ -37,7 +37,7 @@ function liveHtml() {
         <button type="button" data-mode="map" class="${mode === "map" ? "on" : ""}">Dots</button>
         <button type="button" data-mode="pip" class="${mode === "pip" || mode === "pipmap" ? "on" : ""}">Video + dots</button>
       </div>
-      <button type="button" class="ghost" id="live-menu">Menu</button>
+      <div class="bar-right"><button type="button" class="ghost" id="live-boxes" aria-pressed="true">Boxes: on</button><button type="button" class="ghost" id="live-menu">Menu</button></div>
     </div>
     <div class="stage m-${mode}" id="live-stage">
       <div class="live-video"><img id="live-img" alt="" /><button type="button" class="swap" data-swap title="Switch (M)">⇄</button><div class="live-badge" id="live-badge">connecting…</div><div class="live-alert" id="live-alert" hidden></div></div>
@@ -193,6 +193,7 @@ function liveSheet() {
 
 function liveApply(st) {
   LIVE.miss = 0; LIVE.state = st;
+  if (typeof st.boxes === "boolean") { const bb = document.getElementById("live-boxes"); if (bb && bb.getAttribute("aria-pressed") !== String(st.boxes) && !LIVE.boxClick) { bb.setAttribute("aria-pressed", String(st.boxes)); bb.textContent = "Boxes: " + (st.boxes ? "on" : "off"); } }
   const badge = document.getElementById("live-badge"), wait = document.getElementById("live-wait");
   if (badge) badge.textContent = !st.ready ? "getting ready" : st.cutaway ? "off the main camera" : "live";
   if (wait) { wait.hidden = st.ready && !st.cutaway; wait.textContent = !st.ready ? "Getting ready… finding the pitch" : "Waiting for the main camera…"; }
@@ -405,4 +406,13 @@ document.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key.toLowerCase() !== "m" || /input|textarea|select/i.test(event.target.tagName) || event.metaKey || event.ctrlKey) return;
   liveFlip();
+});
+
+document.addEventListener("click", (event) => {
+  const b = event.target.closest?.("#live-boxes");
+  if (!b) return;
+  const on = b.getAttribute("aria-pressed") !== "true";
+  LIVE.boxClick = true; setTimeout(() => { LIVE.boxClick = false; }, 2000);
+  b.setAttribute("aria-pressed", String(on)); b.textContent = "Boxes: " + (on ? "on" : "off");
+  fetch(LIVE_URL + "/boxes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on }) }).catch(() => {});
 });
