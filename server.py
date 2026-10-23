@@ -258,6 +258,4 @@ def index() -> FileResponse:
     return FileResponse(ROOT / "static" / "index.html")
 
 
-# the recorded demo clip and its transcript, for the Demo clip tab
-app.mount("/clips", StaticFiles(directory=ROOT / "live" / "clips"), name="clips")
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")

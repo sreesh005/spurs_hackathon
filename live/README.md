@@ -10,5 +10,3 @@ Model weights (yolov8s.pt) and recordings are not committed.
 - `demo.sh start [clip.mp4]` : starts the UI server, transcript and dots together in the background (one command); `demo.sh stop|status|logs`
 
 The 60-second demo clip is live/clips/demo90.mp4 (demo.sh uses it by default). Delete it from the repo after the event.
-
-Demo clip tab (no servers besides the UI): run `python3 -m uvicorn server:app --port 8765` and open http://127.0.0.1:8765/?view=demo (or pick "Demo clip" in the tab list). It plays live/clips/demo90.mp4 in the page and shows the Twelve Labs transcript saved in live/clips/demo90_transcript.json as the video reaches each line. No dots in this view; those need the tracker (Live dots tab).

@@ -1,15 +1,12 @@
 """M2 prompt and response schema for TwelveLabs analyze. Bump VERSION when you change either."""
 
-VERSION = "football-v3"
+VERSION = "football-v2"
 
 EVENT_TYPES = [
     "goal", "shot_on_target", "shot_off_target", "save", "big_chance", "skill",
     "tackle", "foul", "free_kick", "corner", "penalty", "card", "substitution",
     "celebration", "injury", "build_up", "none",
 ]
-
-SENTIMENTS = ["positive", "negative", "neutral", "mixed"]
-TONES = ["praise", "criticism", "disbelief", "frustration", "controversy", "tension", "humour", "analysis"]
 
 SCHEMA = {
     "type": "object",
@@ -24,15 +21,10 @@ SCHEMA = {
         "is_replay": {"type": "boolean"},
         "caption": {"type": "string"},
         "confidence": {"type": "number"},
-        "commentary_quote": {"type": "string"},
-        "commentary_sentiment": {"type": "string", "enum": SENTIMENTS},
-        "commentator_excitement": {"type": "number"},
-        "commentary_tone": {"type": "array", "items": {"type": "string", "enum": TONES}},
     },
     "required": [
         "is_highlight", "event_type", "team", "key_moment_seconds", "commentary_names", "tottenham_players",
         "tottenham_jersey_numbers", "is_replay", "caption", "confidence",
-        "commentary_quote", "commentary_sentiment", "commentator_excitement", "commentary_tone",
     ],
 }
 
@@ -54,8 +46,4 @@ Watch the whole clip and listen to the commentary, then fill in the JSON.
 - tottenham_jersey_numbers: the readable shirt numbers of the players in tottenham_players only. Empty if none are readable.
 - is_replay: true if the key action is shown as a slow-motion or broadcast replay.
 - caption: one factual sentence a social media editor could use, naming players only if you are sure.
-- confidence: 0 to 1, how sure you are about event_type and the players.
-- commentary_quote: the single most quotable thing a commentator says, word for word as heard. Empty if nobody speaks or you can't make out the words. Never paraphrase or invent.
-- commentary_sentiment: how the commentary feels about Tottenham in this clip. positive for praise of a Spurs player or delight at a Spurs moment, negative for criticism of Spurs or delight at a Man Utd moment, mixed if both, neutral for plain description or silence.
-- commentator_excitement: 0 to 1, how excited the commentators sound: 0 calm or silent, 0.5 raised voices, 1 shouting.
-- commentary_tone: up to 3 tones you actually hear, from the allowed list. Empty if the commentary is only plain description."""
+- confidence: 0 to 1, how sure you are about event_type and the players."""
