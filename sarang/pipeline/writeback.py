@@ -38,7 +38,18 @@ def raw_tags(analysis: dict, cut: str, excitement: float | None, found_by: str) 
         tags.append(f"excitement:{excitement:.2f}")
     if analysis.get("is_replay"):
         tags.append("replay")
+    if analysis.get("commentary_sentiment"):  # football-v3 and later
+        tags.append(f"sentiment:{analysis['commentary_sentiment']}")
+    if analysis.get("commentator_excitement") is not None:
+        tags.append(f"commentator_excitement:{analysis['commentator_excitement']:.2f}")
+    tags += [f"tone:{t}" for t in analysis.get("commentary_tone") or []]
     return tags
+
+
+def description(analysis: dict) -> str:
+    """The caption, plus the commentator's line when one was heard. Used for the log and the upload."""
+    quote = (analysis.get("commentary_quote") or "").strip().strip('"')
+    return f'{analysis["caption"]}\nCommentary: "{quote}"' if quote else analysis["caption"]
 
 
 def log_range(run: dict) -> tuple[float, float, float]:
@@ -62,7 +73,7 @@ def build_log_body(run: dict, media_id: int, company_id: int, players: list[int]
         tags.insert(0, "source:twelvelabs")
     return {"company_id": company_id, "video_logs": [{
         "media_id": media_id,
-        "log": {"start_offset": start, "end_offset": end, "comment": run["analysis"]["caption"],
+        "log": {"start_offset": start, "end_offset": end, "comment": description(run["analysis"]),
                 "raw_tags": tags + [f"clip:{run['clip_id']}"], "player_ids": players}}]}
 
 
@@ -102,7 +113,7 @@ def deliver(run: dict, mp4: Path, cut: str = "full", excitement: float | None = 
     summary = {"media_id": media_id, "log_at": key, "log_range": [start, end], "players": players, "tags": tags}
 
     if a.get("is_highlight"):
-        summary["upload"] = upload(sp, s, mp4, upload_name(run), a["caption"], tags, players)
+        summary["upload"] = upload(sp, s, mp4, upload_name(run), description(a), tags, players)
     return summary
 
 
