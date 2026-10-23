@@ -255,3 +255,71 @@ def test_index_tails_supersedes_and_falls_back(tmp_path):
 
     kinsky = index.for_player(3)
     assert kinsky["showing"] == "none"
+
+
+# ---------- clips read back from ScorePlay (what the auto-clipper wrote) ----------
+
+
+def sp_log(log_id, clip="m1_full_1792770000", event="goal", start=3992.0, players=({"id": 1, "name": "Dominic Ayodele Solanke"},), url="https://cdn.scoreplay.io/x/clip.m3u8", extra_tags=()):
+    return {
+        "ID": log_id, "start_offset": start, "end_offset": start + 20,
+        "comment": 'Solanke equalises.\nCommentary: "What a finish!"',
+        "raw_tags": ["source:twelvelabs", f"event:{event}", "team:tottenham", f"cut:{'quick' if '_quick_' in clip else 'full'}", f"clip:{clip}", *extra_tags],
+        "players": list(players), "playback_url": url, "created_at": "2026-10-23T20:00:00Z",
+    }
+
+
+def test_a_log_becomes_a_clip():
+    clip = lc.normalize_log(sp_log(17905257), MEDIA, T0 + 1e6, relay=lambda u: "/relay?" + u)
+    assert clip.id == "log:17905257" and clip.source == "live" and clip.event == "goal"
+    assert clip.caption == "Solanke equalises." and clip.extra["quote"] == "What a finish!"
+    assert clip.match == (MEDIA, 4000.0 - lc.KEY_SPAN, 4000.0 + lc.KEY_SPAN)  # key moment 8s into the log
+    assert clip.player_ids == [1] and clip.video.startswith("/relay?")
+
+
+def test_logs_not_from_the_pipeline_or_without_a_clip_are_ignored():
+    manual = sp_log(1); manual["raw_tags"] = ["goal"]
+    assert lc.normalize_log(manual, MEDIA, T0) is None
+    assert lc.normalize_log(sp_log(2, url=""), MEDIA, T0) is None
+
+
+def test_tag_objects_are_read_too():
+    log = sp_log(3); log["raw_tags"] = [{"name": t} for t in log["raw_tags"]]
+    assert lc.normalize_log(log, MEDIA, T0).event == "goal"
+
+
+def test_scoreplay_copy_replaces_the_local_file_and_updates_count(tmp_path):
+    root = tmp_path / "sarang"
+    index = lc.ClipIndex([root], library(), min_refresh=0)
+    write_run(root, [record("m1_full_1792770000")])
+    assert index.feed()["live_clips"] == 1
+    v = index.version
+    assert index.add_scoreplay_logs(MEDIA, [sp_log(11)]) == 1
+    feed = index.feed()
+    assert index.version > v
+    assert feed["live_clips"] == 1 and feed["from_scoreplay"] == 1
+    angles = index.for_player(1)["live"][0]["angles"]
+    assert [a["id"] for a in angles] == ["log:11"]
+    # same log again: nothing changes
+    v = index.version
+    assert index.add_scoreplay_logs(MEDIA, [sp_log(11)]) == 0 and index.version == v
+
+
+def test_players_added_later_in_scoreplay_show_up(tmp_path):
+    index = lc.ClipIndex([tmp_path], library(), min_refresh=0)
+    index.add_scoreplay_logs(MEDIA, [sp_log(12, players=())])
+    assert index.feed()["counts"] == {}
+    index.add_scoreplay_logs(MEDIA, [sp_log(12, players=({"id": 2, "name": "Mohammed Kudus"},))])  # face recognition tagged him
+    assert index.feed()["counts"] == {"2": 1}
+
+
+def test_quick_and_full_logs_group_and_the_replay_joins(tmp_path):
+    index = lc.ClipIndex([tmp_path], library(), min_refresh=0)
+    index.add_scoreplay_logs(MEDIA, [
+        sp_log(21, clip="m4_quick_1792770000"),
+        sp_log(22, clip="m4_full_1792770000"),
+        sp_log(23, clip="m1004_full_1792770012", start=4004.0, extra_tags=("replay",)),
+    ])
+    live = index.for_player(1)["live"]
+    assert len(live) == 1
+    assert [a["label"] for a in live[0]["angles"]] == ["Broadcast", "Broadcast replay"]

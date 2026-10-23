@@ -24,7 +24,7 @@ def main() -> None:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8765, help="desk port")
     ap.add_argument("--tracker-port", type=int, default=8766)
-    ap.add_argument("--speed", type=float, default=1.0, help="how fast the scripted match runs")
+    ap.add_argument("--speed", type=float, default=1.0, help="how fast the scripted match runs (above 1, the stand-in ScorePlay recording is off)")
     ap.add_argument("--no-desk", action="store_true", help="run only the fake tracker and clipper")
     ap.add_argument("--real-library", action="store_true", help="with --no-desk: name players from data/library.json")
     ap.add_argument("--real-scoreplay", action="store_true", help="play ScorePlay's real live recording (needs SCOREPLAY_API_KEY) instead of the demo one")
@@ -44,13 +44,15 @@ def main() -> None:
     print("demo: preparing the library and footage (first run takes ~20s)...")
     library = library_for_sim(demo=demo_library)
     clock = Clock(args.speed)
+    fake_tracker = tracker.Tracker(clock, library)
     try:  # bind first: a second demo must not wipe the folders of one that is already running
-        tracker.serve(tracker.Tracker(clock, library), args.host, args.tracker_port)
+        tracker.serve(fake_tracker, args.host, args.tracker_port)
     except OSError as exc:
         raise SystemExit(f"demo: port {args.tracker_port} is busy ({exc.strerror}). Is another demo or the real tracker running?")
     live = f"http://{args.host}:{args.tracker_port}"
-    rec = recording.Recording(live)
-    if not args.no_desk and not args.real_scoreplay and rec.start():
+    rec = recording.Recording(fake_tracker)
+    # The recording runs in real time, so at --speed above 1 plays would bunch up on its clock: no recording then.
+    if not args.no_desk and not args.real_scoreplay and args.speed == 1 and rec.start():
         # the desk plays this the way it plays ScorePlay's own recording of the feed
         os.environ["SCOREPLAY_LIVE_PLAYLIST"] = f"{live}/hls/original.m3u8"
         os.environ["SCOREPLAY_LIVE_MEDIA_ID"] = str(rec.media_id)

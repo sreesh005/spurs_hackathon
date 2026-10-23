@@ -26,7 +26,7 @@ from pydantic import BaseModel
 
 from catalog import DATA, LIBRARY_PATH, build_library, load_env, load_library
 from live_clips import ClipIndex
-from scoreplay_stream import LiveStream
+from scoreplay_stream import LiveStream, LogPoller, relay_fetch
 
 ROOT = Path(__file__).resolve().parent
 READS_PATH = DATA / "reads.json"
@@ -58,6 +58,18 @@ def _clipper_roots() -> list[Path]:
 
 CLIPS = ClipIndex(_clipper_roots())
 STREAM = LiveStream()
+POLLER = LogPoller(STREAM, CLIPS)
+
+
+def _read_scoreplay_clips() -> bool:
+    """Clips come from ScorePlay (what the auto-clipper wrote back) whenever there is a key, outside the demo.
+    LIVE_CLIPS_FROM_SCOREPLAY=0 turns it off, =1 turns it on in the demo too (with --real-scoreplay)."""
+    flag = os.environ.get("LIVE_CLIPS_FROM_SCOREPLAY", "").strip().lower()
+    if flag in ("0", "false", "no"):
+        return False
+    if flag in ("1", "true", "yes"):
+        return True
+    return not DEMO and bool(load_env().get("SCOREPLAY_API_KEY"))
 
 
 def _load() -> dict:
@@ -75,6 +87,8 @@ async def lifespan(_app: FastAPI):
     DATA.mkdir(exist_ok=True)
     LIBRARY = _load()
     CLIPS.set_library(LIBRARY)
+    if _read_scoreplay_clips():
+        POLLER.start()
     yield
 
 
@@ -301,6 +315,7 @@ def live_feed() -> dict:
     """Polled by the Live dots tab: clip counts per player and the newest captures."""
     out = CLIPS.feed()
     out["demo"] = DEMO
+    out["scoreplay"] = POLLER.status() if POLLER.is_alive() else {"note": "off (demo, or no ScorePlay key)"}
     return out
 
 
@@ -348,6 +363,32 @@ def live_stream_segment(path: str, q: str = "") -> Response:
     except (urllib.error.URLError, OSError) as exc:
         raise HTTPException(status_code=502, detail=f"ScorePlay segment: {exc}") from exc
     return Response(data, media_type=kind, headers={"Cache-Control": "max-age=3600"})
+
+
+@app.get("/api/live/relay.m3u8")
+@app.get("/api/live/relay")
+def live_relay(u: str) -> Response:
+    """A ScorePlay clip's video (a log's playback URL), relayed so the browser only talks to the desk."""
+    try:
+        data, kind = relay_fetch(u)
+    except LookupError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except (urllib.error.URLError, OSError) as exc:
+        raise HTTPException(status_code=502, detail=f"ScorePlay media: {exc}") from exc
+    cache = "no-store" if kind == "application/vnd.apple.mpegurl" else "max-age=3600"
+    return Response(data, media_type=kind, headers={"Cache-Control": cache})
+
+
+@app.get("/api/live/scoreplay-logs/{media_id}")
+def scoreplay_logs_raw(media_id: int) -> dict:
+    """Debug: the raw logs ScorePlay returns for a media, to check field names on the day."""
+    env = STREAM._env()
+    if not env.get("SCOREPLAY_API_KEY"):
+        raise HTTPException(status_code=400, detail="SCOREPLAY_API_KEY is empty in .env")
+    try:
+        return {"media_id": media_id, "logs": POLLER.logs(env, media_id)}
+    except (urllib.error.URLError, OSError) as exc:
+        raise HTTPException(status_code=502, detail=f"ScorePlay: {exc}") from exc
 
 
 @app.get("/")

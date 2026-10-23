@@ -55,3 +55,39 @@ def test_segment_names_are_checked_before_fetching():
         except LookupError:
             continue
         raise AssertionError(f"{bad!r} was accepted")
+
+
+def test_relay_only_fetches_scoreplay_hosts():
+    assert ss.relay_allowed("https://cdn.scoreplay.io/a.m3u8")
+    assert ss.relay_allowed("https://bucket.s3.eu-west-1.amazonaws.com/a.ts")
+    assert not ss.relay_allowed("https://evil.example/a.ts")
+    assert not ss.relay_allowed("https://scoreplay.io.evil.example/a.ts")
+    assert not ss.relay_allowed("file:///etc/passwd")
+    for bad in ("http://127.0.0.1:8765/api/library", "https://evil.example/x"):
+        try:
+            ss.relay_fetch(bad)
+        except LookupError:
+            continue
+        raise AssertionError(bad)
+
+
+def test_relay_rewrites_a_clip_playlist():
+    url = "https://cdn.scoreplay.io/5370/clips/17905257/index.m3u8"
+    out = ss.relay_rewrite("#EXTM3U\n#EXTINF:2,\nseg0.ts\nhttps://evil.example/x.ts\n", url)
+    assert "/api/live/relay?u=https%3A%2F%2Fcdn.scoreplay.io%2F5370%2Fclips%2F17905257%2Fseg0.ts" in out
+    assert "https://evil.example/x.ts" in out
+
+
+def test_log_poller_reads_every_page(monkeypatch):
+    stream = ss.LiveStream()
+    pages = {1: [{"ID": i} for i in range(100)], 2: [{"ID": 100}]}
+    calls = []
+
+    def fake_api(env, path, body=None):
+        calls.append(path)
+        page = int(path.split("page=")[1].split("&")[0])
+        return {"items": pages.get(page, []), "page": page, "limit": 100}
+
+    monkeypatch.setattr(stream, "_api", fake_api)
+    poller = ss.LogPoller(stream, index=None)
+    assert len(poller.logs({}, 42)) == 101 and len(calls) == 2

@@ -386,3 +386,6 @@ select {
 .lv-switch button { border: 1px solid var(--line); background: var(--paper-2); border-radius: 999px; padding: 4px 12px; font-size: 13px; }
 .lv-switch button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
 .lc-jump { margin-top: 10px; }
+.lc-quote { margin: 6px 0 0; font-style: italic; color: var(--text); font-size: 14px; }
+.lc-origin { display: flex; gap: 6px; align-items: center; margin: 6px 0 0; }
+.lc-from { flex-basis: 100%; display: flex; gap: 6px; align-items: center; }

@@ -136,6 +136,8 @@ function liveSheet() {
   const open = people().some((person) => Number(person.id) === Number(state.focus));
   if (desk) desk.classList.toggle("with-reel", open);
   bindPlayers(); mountReel();
+  const clip = document.getElementById("lc-video");
+  if (clip && typeof lcAttach === "function") lcAttach(clip);
 }
 
 function liveTick() {
@@ -162,6 +164,8 @@ function mountLive() {
   if (!LC.timer) LC.timer = setInterval(lcFeedTick, 1500);
   lcFeedTick();
   lcTicker();
+  const clip = document.getElementById("lc-video");
+  if (clip) lcAttach(clip);
   if (state.focus) lcLoad(Number(state.focus));
 }
 
@@ -209,6 +213,7 @@ function lcFeedTick() {
   fetch("/api/live/feed", { cache: "no-store" }).then((r) => r.json()).then((feed) => {
     LC.feedAt = Date.now(); LC.serverNow = feed.now; LC.demo = !!feed.demo;
     LC.counts = feed.counts || {};
+    LC.scoreplay = feed.scoreplay || null;
     LC.latest = feed.latest || [];
     const ids = new Set(LC.latest.map((m) => m.id + ":" + m.angle_count));
     if (LC.seen) {
@@ -306,8 +311,10 @@ function liveSheetHtml() {
   if (!LC.data[pid]) lcLoad(pid);
   const { moment, angle } = lcSelected(pid);
   const stage = angle
-    ? `<div class="reel-stage lc-stage"><video id="lc-video" controls playsinline preload="metadata" src="${esc(angle.video)}" poster="${esc(angle.thumb || "")}"></video></div>
+    ? `<div class="reel-stage lc-stage"><video id="lc-video" controls playsinline preload="metadata" data-src="${esc(angle.video)}" poster="${esc(angle.thumb || "")}"></video></div>
        <div class="lc-caption"><b>${esc(moment.event_plain)}</b> <span id="lc-cap">${esc(angle.source === "live" && angle.caption ? angle.caption : moment.caption)}</span></div>
+       ${angle.quote ? `<p class="lc-quote">“${esc(angle.quote)}”</p>` : ""}
+       ${angle.from === "scoreplay" ? `<p class="meta lc-origin">${lcSourceTag("scoreplay")} Clip made by ScorePlay from the auto-clipper's note${angle.scoreplay_log_id ? " · log " + esc(angle.scoreplay_log_id) : ""}</p>` : ""}
        <div class="lc-angles" id="lc-angles">${lcAngleButtons(moment, angle)}</div>
        <p class="meta lc-why" id="lc-why">${esc(lcWhy(moment))}</p>
        ${spJumpHtml(moment)}`
@@ -333,7 +340,7 @@ function lcRender(full) {
   const pid = Number(state.focus);
   const video = document.getElementById("lc-video");
   const { moment, angle } = lcSelected(pid);
-  const same = video && angle && video.getAttribute("src") === angle.video;
+  const same = video && angle && video.dataset.src === angle.video;
   if (full || !same) { liveSheet(); lcPlay(); return; }
   const lists = document.getElementById("lc-lists"); if (lists) lists.innerHTML = lcListsHtml(pid, moment);
   const angles = document.getElementById("lc-angles"); if (angles) angles.innerHTML = lcAngleButtons(moment, angle);
@@ -341,16 +348,37 @@ function lcRender(full) {
   lcNote();
 }
 
+function lcAttach(video) {
+  // ScorePlay's clips are HLS (relayed by the desk); the auto-clipper's local files are mp4
+  const url = video.dataset.src || "";
+  if (video.dataset.attached === url) return;
+  if (LC.hls) { try { LC.hls.destroy(); } catch (e) {} LC.hls = null; }
+  video.dataset.attached = url;
+  if (/\.m3u8|relay\.m3u8/.test(url) && window.Hls && Hls.isSupported()) {
+    const hls = new Hls({ maxBufferLength: 30 });
+    hls.loadSource(url);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+    LC.hls = hls;
+  } else {
+    video.src = url;
+  }
+}
+
 function lcPlay() {
   const video = document.getElementById("lc-video");
-  if (video) video.play().catch(() => {});
+  if (!video) return;
+  lcAttach(video);
+  video.play().catch(() => {});
 }
 
 function lcTicker() {
   const box = document.getElementById("lc-ticker");
   if (!box) return;
-  if (!LC.latest.length) { box.innerHTML = `<span class="meta">Just captured: nothing yet. Clips land here seconds after the auto-clipper cuts them.</span>`; return; }
-  box.innerHTML = `<span class="kicker">Just captured</span>` + LC.latest.slice(0, 5).map((m) => {
+  const from = LC.scoreplay && LC.scoreplay.last_ok ? `<span class="meta lc-from">${lcSourceTag("scoreplay")} Reading clips from ScorePlay · ${esc(LC.scoreplay.note)}</span>`
+    : LC.scoreplay && !LC.demo ? `<span class="meta lc-from">ScorePlay clips: ${esc(LC.scoreplay.note)}</span>` : "";
+  if (!LC.latest.length) { box.innerHTML = `${from}<span class="meta">Just captured: nothing yet. Clips land here seconds after the auto-clipper cuts them.</span>`; return; }
+  box.innerHTML = from + `<span class="kicker">Just captured</span>` + LC.latest.slice(0, 5).map((m) => {
     const who = m.player_ids.map((pid) => liveName(pid)?.short).filter(Boolean).join(", ") || "Untagged";
     const pid = m.player_ids[0];
     return `<button type="button" class="lc-chip" ${pid ? `data-lc-player="${pid}" data-lc-open="${esc(m.id)}"` : "disabled"}>

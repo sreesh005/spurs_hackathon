@@ -171,3 +171,117 @@ class LiveStream:
             data = resp.read()
         ext = "." + path.rsplit(".", 1)[-1] if "." in path else ""
         return data, TYPES.get(ext, "application/octet-stream")
+
+
+# ---- relaying ScorePlay's clip videos (the playback URL of each log) ----
+
+RELAY_HOSTS = ("scoreplay.io", "amazonaws.com", "cloudfront.net")
+
+
+def relay_allowed(url: str, extra_hosts: tuple[str, ...] = ()) -> bool:
+    parts = urllib.parse.urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if parts.scheme not in ("https", "http"):
+        return False
+    return any(host == h or host.endswith("." + h) for h in (*RELAY_HOSTS, *extra_hosts))
+
+
+def relay_url(url: str) -> str:
+    """Where the desk serves a ScorePlay media URL. Playlists and their parts all go through the relay."""
+    path = urllib.parse.urlsplit(url).path
+    route = "/api/live/relay.m3u8" if path.endswith(".m3u8") else "/api/live/relay"
+    return f"{route}?u={urllib.parse.quote(url, safe='')}"
+
+
+def relay_rewrite(text: str, playlist: str) -> str:
+    out = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            target = urllib.parse.urljoin(playlist, stripped)
+            out.append(relay_url(target) if relay_allowed(target) else stripped)
+        elif 'URI="' in line:
+            out.append(re.sub(r'URI="([^"]+)"', lambda m: f'URI="{relay_url(urllib.parse.urljoin(playlist, m.group(1)))}"' if relay_allowed(urllib.parse.urljoin(playlist, m.group(1))) else m.group(0), line))
+        else:
+            out.append(line)
+    return "\n".join(out) + "\n"
+
+
+def relay_fetch(url: str) -> tuple[bytes, str]:
+    """Fetch a ScorePlay media URL for the desk. Only ScorePlay and its storage hosts, never anything else."""
+    if not relay_allowed(url):
+        raise LookupError("not a ScorePlay media URL")
+    with urllib.request.urlopen(url, timeout=20) as resp:
+        data = resp.read()
+        kind = resp.headers.get_content_type()
+    path = urllib.parse.urlsplit(url).path
+    if path.endswith(".m3u8"):
+        return relay_rewrite(data.decode("utf-8", errors="replace"), url).encode(), TYPES[".m3u8"]
+    ext = "." + path.rsplit(".", 1)[-1] if "." in path.rsplit("/", 1)[-1] else ""
+    return data, TYPES.get(ext, kind or "application/octet-stream")
+
+
+# ---- polling the clips the auto-clipper wrote back ----
+
+
+class LogPoller(threading.Thread):
+    """Every few seconds, reads the logs on the live recording (and any SCOREPLAY_CLIP_MEDIA_IDS) and hands
+    the auto-clipper's ones to the clip index. The desk then needs nothing from the clipper's machine."""
+
+    def __init__(self, stream: LiveStream, index, every: float = 8.0):
+        super().__init__(name="scoreplay-logs", daemon=True)
+        self.stream, self.index, self.every = stream, index, every
+        self.note = "starting"
+        self.last_ok = 0.0
+        self.counts: dict[int, int] = {}
+
+    def media_ids(self, env: dict) -> list[int]:
+        ids = []
+        found = self.stream.current()
+        if found and found.get("media_id"):
+            ids.append(int(found["media_id"]))
+        for part in (os.environ.get("SCOREPLAY_CLIP_MEDIA_IDS") or env.get("SCOREPLAY_CLIP_MEDIA_IDS") or "").split(","):
+            if part.strip().isdigit() and int(part) not in ids:
+                ids.append(int(part))
+        return ids
+
+    def logs(self, env: dict, media_id: int) -> list[dict]:
+        items: list[dict] = []
+        for page in range(1, 21):
+            payload = self.stream._api(env, f"/media/{media_id}/logs?page={page}&limit=100")
+            batch = payload.get("items") if isinstance(payload, dict) else payload
+            batch = batch or []
+            items.extend(batch)
+            if len(batch) < 100:
+                break
+        return items
+
+    def poll(self) -> None:
+        env = self.stream._env()
+        if not env.get("SCOREPLAY_API_KEY"):
+            self.note = "SCOREPLAY_API_KEY is empty in .env"
+            return
+        ids = self.media_ids(env)
+        if not ids:
+            self.note = "waiting for a live recording in ScorePlay"
+            return
+        notes = []
+        for mid in ids:
+            items = self.logs(env, mid)
+            self.index.add_scoreplay_logs(mid, items, relay_url)
+            ours = sum(1 for log in items if "source:twelvelabs" in str(log.get("raw_tags") or log.get("tags") or ""))
+            self.counts[mid] = ours
+            notes.append(f"media {mid}: {ours} clips from the auto-clipper")
+        self.last_ok = time.time()
+        self.note = "; ".join(notes)
+
+    def run(self) -> None:
+        while True:
+            try:
+                self.poll()
+            except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError) as exc:
+                self.note = f"could not read ScorePlay logs: {exc}"
+            time.sleep(self.every)
+
+    def status(self) -> dict:
+        return {"note": self.note, "last_ok": self.last_ok or None, "counts": self.counts}

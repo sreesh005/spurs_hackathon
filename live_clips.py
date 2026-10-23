@@ -184,7 +184,7 @@ def normalize_record(rec: dict, sidecar: dict | None, clip_key: str, run_name: s
     if m:
         hint = f"{run_name}:m{m.group(1)}"
 
-    extra = {"cut": cut}
+    extra = {"cut": cut, "clip_key": stem}
     upload = wb.get("upload") or {}
     if upload.get("media_id"):
         extra["scoreplay_media_id"] = upload["media_id"]
@@ -192,6 +192,8 @@ def normalize_record(rec: dict, sidecar: dict | None, clip_key: str, run_name: s
         extra["log_at"] = wb.get("log_at")
     if wb.get("log_range"):
         extra["log_range"] = wb["log_range"]
+    if a.get("commentary_quote"):  # football-v3
+        extra["quote"] = a["commentary_quote"]
     extra["in_scoreplay"] = "written" if upload.get("media_id") else ("dry run" if upload.get("dry_run") else ("logged" if wb.get("tags") else ""))
 
     return Clip(
@@ -216,6 +218,109 @@ def normalize_record(rec: dict, sidecar: dict | None, clip_key: str, run_name: s
         group_hint=hint,
         importance=1.0 if a.get("is_highlight") else 0.5,
         extra=extra,
+    )
+
+
+def _tags(log: dict) -> list[str]:
+    """raw_tags as plain strings, whether ScorePlay returns strings or {name|value|label} objects."""
+    out = []
+    for t in log.get("raw_tags") or log.get("tags") or []:
+        if isinstance(t, str):
+            out.append(t)
+        elif isinstance(t, dict):
+            v = t.get("name") or t.get("value") or t.get("label") or t.get("raw_tag") or ""
+            if v:
+                out.append(str(v))
+    return out
+
+
+def _tag(tags: list[str], key: str) -> str:
+    return next((t.split(":", 1)[1] for t in tags if t.startswith(key + ":")), "")
+
+
+def _num(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _when(value) -> float | None:
+    """A unix time from seconds, milliseconds, or an ISO date."""
+    n = _num(value)
+    if n is not None:
+        return n / 1000.0 if n > 1e11 else n
+    if isinstance(value, str) and value:
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+    return None
+
+
+def normalize_log(log: dict, media_id: int, seen_at: float, relay=None) -> Clip | None:
+    """One ScorePlay video log the auto-clipper wrote back (sarang/pipeline/writeback.py) -> Clip.
+
+    Only logs tagged source:twelvelabs count. ScorePlay makes each log on a live recording into a clip
+    with its own playback URL, which is what the drawer plays. `relay` turns that URL into one the desk serves.
+    """
+    tags = _tags(log)
+    if "source:twelvelabs" not in tags:
+        return None
+    event = _tag(tags, "event") or "play"
+    if event in SKIP_EVENTS:
+        return None
+    start = _num(log.get("start_offset"))
+    end = _num(log.get("end_offset"))
+    if start is None:
+        start = _num(log.get("offset"))
+    match = None
+    if start is not None:
+        # the clipper logs key-8 .. key+12, kept inside its clip: the key moment is 8s in when there is room
+        key = start + 8 if end is None or end - start >= 16 else (start + (end if end is not None else start)) / 2
+        match = (int(media_id), key - KEY_SPAN, key + KEY_SPAN)
+    players = log.get("players") or []
+    ids = [int(p["id"]) for p in players if isinstance(p, dict) and p.get("id") is not None]
+    ids += [int(x) for x in log.get("player_ids") or [] if int(x) not in ids]
+    names = [p.get("name") for p in players if isinstance(p, dict) and p.get("name")]
+    comment = (log.get("comment") or log.get("description") or "").strip()
+    caption, _, rest = comment.partition("\n")
+    quote = rest.split("Commentary:", 1)[1].strip().strip('"') if "Commentary:" in rest else ""
+    video = log.get("playback_url") or log.get("clip_url") or log.get("video_url") or ""
+    if not video:
+        return None  # ScorePlay hasn't made the clip yet: the next poll picks it up
+    clip_id = _tag(tags, "clip")
+    is_replay = "replay" in tags
+    cut = _tag(tags, "cut") or "full"
+    hint = ""
+    m = MOMENT_RE.match(clip_id)
+    if m:
+        hint = f"sp{media_id}:{clip_id.rsplit('_', 1)[0].replace('_quick', '').replace('_full', '')}:{clip_id.rsplit('_', 1)[-1]}"
+    found_by = _tag(tags, "found_by") or "rules"
+    label = "Broadcast replay" if is_replay else ("Quick cut" if cut == "quick" else ("Broadcast (safety net)" if found_by == "sweep" else "Broadcast"))
+    created = _when(log.get("created_at") or log.get("createdAt"))
+    log_id = log.get("ID") or log.get("id")
+    return Clip(
+        id=f"log:{log_id}",
+        source="live",
+        label=label,
+        event=event,
+        team=_tag(tags, "team"),
+        caption=caption or clip_id,
+        video=relay(video) if relay else video,
+        thumb=log.get("thumbnail_url") or log.get("thumbnail") or "",
+        duration=(end - start) if (start is not None and end is not None) else 0.0,
+        player_ids=ids,
+        names=names,
+        match=match,
+        is_replay=is_replay,
+        captured_at=min(created or seen_at, seen_at),
+        confidence=_num(_tag(tags, "confidence")),
+        found_by=found_by,
+        group_hint=hint,
+        importance=1.0 if event in UNIQUE_EVENTS or event == "skill" else 0.5,
+        extra={"cut": cut, "clip_key": clip_id, "in_scoreplay": "in ScorePlay", "scoreplay_log_id": log_id,
+               "scoreplay_media_id": media_id, "quote": quote, "from": "scoreplay"},
     )
 
 
@@ -491,6 +596,7 @@ class ClipIndex:
         self.uploads: dict[str, Clip] = {}
         self.version = 0
         self.last_refresh = 0.0
+        self.scoreplay_seen = 0.0  # last time a clip came in from ScorePlay
         self._lib_clips: list[Clip] | None = None
         self._moments: list[dict] | None = None
         self._moments_version = -1
@@ -586,11 +692,38 @@ class ClipIndex:
         self.uploads[clip.id] = clip
         return True
 
+    def add_scoreplay_logs(self, media_id: int, logs: list[dict], relay=None) -> int:
+        """Clips the auto-clipper wrote back to ScorePlay, as read from GET /media/{id}/logs. Returns how many are new."""
+        new = changed = 0
+        with self.lock:
+            for log in logs:
+                clip = normalize_log(log, media_id, time.time(), relay)
+                if not clip:
+                    continue
+                old = self.live.get(clip.id)
+                if old:
+                    clip.captured_at = old.captured_at
+                    if (old.video, old.player_ids, old.names, old.caption) == (clip.video, clip.player_ids, clip.names, clip.caption):
+                        continue  # nothing new; also keeps resolved player IDs
+                else:
+                    new += 1
+                changed += 1
+                self.live[clip.id] = clip
+                self.scoreplay_seen = time.time()
+            if changed:
+                self._supersede()
+                self.version += 1
+        return new
+
     def _supersede(self) -> None:
-        """A full cut replaces the quick cut of the same rules-engine moment (sarang README: not done yet)."""
+        """A full cut replaces the quick cut of the same rules-engine moment (sarang README: not done yet),
+        and a clip ScorePlay already has replaces the local file of the same clip."""
         full = {c.group_hint for c in self.live.values() if c.group_hint and c.extra.get("cut") == "full"}
+        in_scoreplay = {c.extra.get("clip_key") for c in self.live.values() if c.extra.get("from") == "scoreplay" and c.extra.get("clip_key")}
         for c in self.live.values():
-            c.superseded = bool(c.group_hint and c.extra.get("cut") == "quick" and c.group_hint in full)
+            quick = bool(c.group_hint and c.extra.get("cut") == "quick" and c.group_hint in full)
+            dup = c.extra.get("from") != "scoreplay" and c.extra.get("clip_key") in in_scoreplay
+            c.superseded = quick or dup
 
     # -- reading --
 
@@ -645,6 +778,7 @@ class ClipIndex:
                 for m in newest
             ],
             "live_clips": sum(1 for c in self.live.values() if not c.superseded),
+            "from_scoreplay": sum(1 for c in self.live.values() if not c.superseded and c.extra.get("from") == "scoreplay"),
             "watching": [str(r) for r in self.roots],
             "now": time.time(),
         }
