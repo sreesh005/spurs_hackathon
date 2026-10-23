@@ -1,9 +1,0 @@
-.env
-.pytest_cache/
-.venv/
-__pycache__/
-clips/
-models/
-runs/
-segments/
-state.db
