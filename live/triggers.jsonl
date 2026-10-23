@@ -1,0 +1,16 @@
+{"wall": "13:52:06", "stream_t": 6.09, "pattern": "switch", "score": 0.8, "detail": "ball swung from one wing to the other", "team": "tot"}
+{"wall": "13:52:08", "stream_t": 8.81, "pattern": "overlap", "score": 0.7, "detail": "runner on the outside, carrier marked", "team": "tot"}
+{"wall": "13:52:11", "stream_t": 11.21, "pattern": "press", "score": 0.85, "detail": "3 defenders closing on the ball carrier", "team": "tot"}
+{"wall": "13:52:12", "stream_t": 12.62, "pattern": "linebreak", "score": 1.0, "detail": "7 defenders now behind the ball", "team": "tot"}
+{"wall": "13:52:13", "stream_t": 13.23, "pattern": "counter", "score": 1.0, "detail": "4 attackers up, 2 defenders between ball and goal", "team": "tot"}
+{"wall": "13:52:22", "stream_t": 22.91, "pattern": "linebreak", "score": 1.0, "detail": "5 defenders now behind the ball", "team": "mnu"}
+{"wall": "13:52:23", "stream_t": 23.26, "pattern": "counter", "score": 1.0, "detail": "3 attackers up, 0 defenders between ball and goal", "team": "mnu"}
+{"wall": "13:53:16", "stream_t": 76.14, "pattern": "counter", "score": 1.0, "detail": "3 attackers up, 1 defenders between ball and goal", "team": "tot"}
+{"wall": "13:53:20", "stream_t": 80.85, "pattern": "linebreak", "score": 1.0, "detail": "6 defenders now behind the ball", "team": "mnu"}
+{"wall": "13:54:12", "stream_t": 132.87, "pattern": "linebreak", "score": 0.9, "detail": "4 defenders now behind the ball", "team": "tot"}
+{"wall": "13:54:13", "stream_t": 133.05, "pattern": "counter", "score": 1.0, "detail": "4 attackers up, 2 defenders between ball and goal", "team": "tot"}
+{"wall": "13:54:13", "stream_t": 133.4, "pattern": "overlap", "score": 0.7, "detail": "runner on the outside, carrier marked", "team": "tot"}
+{"wall": "13:54:31", "stream_t": 151.82, "pattern": "press", "score": 0.85, "detail": "3 defenders closing on the ball carrier", "team": "mnu"}
+{"wall": "13:55:04", "stream_t": 184.0, "pattern": "switch", "score": 0.8, "detail": "ball swung from one wing to the other", "team": "mnu"}
+{"wall": "13:55:04", "stream_t": 184.09, "pattern": "counter", "score": 0.7, "detail": "3 attackers up, 4 defenders between ball and goal", "team": "tot"}
+{"wall": "13:55:08", "stream_t": 187.95, "pattern": "press", "score": 1.0, "detail": "5 defenders closing on the ball carrier", "team": "mnu"}
