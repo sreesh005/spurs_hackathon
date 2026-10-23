@@ -29,15 +29,24 @@ function livePitchLines() {
 }
 
 function liveHtml() {
+  const mode = (() => { try { return localStorage.getItem("liveMode") || "both"; } catch (e) { return "both"; } })();
   return `<section class="live">
-    <div class="live-top">
+    <div class="stage-bar">
+      <div class="seg" id="live-seg">
+        <button type="button" data-mode="video" class="${mode === "video" ? "on" : ""}">Video</button>
+        <button type="button" data-mode="both" class="${mode === "both" ? "on" : ""}">Video + map</button>
+        <button type="button" data-mode="map" class="${mode === "map" ? "on" : ""}">Map</button>
+      </div>
+      <button type="button" class="ghost" id="live-menu">Menu</button>
+    </div>
+    <div class="stage m-${mode}" id="live-stage">
       <div class="live-video"><img id="live-img" alt="" /><div class="live-badge" id="live-badge">connecting…</div><div class="live-alert" id="live-alert" hidden></div></div>
+      <div class="live-pitch-wrap">
+        <div class="live-pitch" id="live-pitch">${livePitchLines()}<div id="live-dots"></div><div class="live-ball" id="live-ball" hidden></div>
+          <div class="live-wait" id="live-wait">Getting ready… finding the pitch</div></div>
+      </div>
     </div>
-    <div class="live-pitch-wrap">
-      <div class="live-pitch" id="live-pitch">${livePitchLines()}<div id="live-dots"></div><div class="live-ball" id="live-ball" hidden></div>
-        <div class="live-wait" id="live-wait">Getting ready… finding the pitch</div></div>
-      <div class="live-pick" id="live-pick"></div>
-    </div>
+    <div class="live-pick" id="live-pick"></div>
     <div class="live-tx" id="live-tx">
       <div class="tx-head"><b>Commentary</b><span class="tx-dot" id="tx-dot"></span><span class="meta" id="tx-status">connecting…</span>
         <label class="tx-follow"><input type="checkbox" id="tx-follow" checked /> Follow the announcer</label></div>
@@ -335,4 +344,16 @@ document.addEventListener("click", (event) => {
   if (!w) return;
   const p = liveRoster().find((x) => Number(x.id) === Number(w.dataset.who));
   if (p) { const f = document.getElementById("tx-follow"); liveFocusPlayer(p); liveChips(); }
+});
+
+document.addEventListener("click", (event) => {
+  const b = event.target.closest?.("#live-seg [data-mode]");
+  if (b) {
+    const st = document.getElementById("live-stage"); if (!st) return;
+    st.className = "stage m-" + b.dataset.mode;
+    document.querySelectorAll("#live-seg button").forEach((x) => x.classList.toggle("on", x === b));
+    try { localStorage.setItem("liveMode", b.dataset.mode); } catch (e) { /* fine */ }
+    return;
+  }
+  if (event.target.closest?.("#live-menu")) document.body.classList.toggle("show-nav");
 });
