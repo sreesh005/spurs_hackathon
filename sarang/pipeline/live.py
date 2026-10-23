@@ -145,15 +145,25 @@ class Live:
                                        media_id=self.target_media_id)
             if a["is_highlight"] and "skipped" not in result:
                 self.stats["highlights"] += 1
-                tl_store.add_clip(mp4, {"media_id": self.target_media_id, "event": a["event_type"], "team": a["team"],
-                                        "caption": a["caption"],
-                                        "offset": (run.get("clip") or {}).get("source_start_offset")})
+                self.add_to_store(mp4, run, a)
             self.log.write(json.dumps({"clip": mp4.name, "media_id": self.target_media_id, "cut": cut,
                                        "found_by": found_by, "analysis": a, "writeback": result}) + "\n")
             self.log.flush()
         except Exception as e:  # one bad clip shouldn't stop the loop
             self.stats["errors"] += 1
             print(f"  ERROR  {mp4.name}: {e}")
+
+    def add_to_store(self, mp4: Path, run: dict, a: dict) -> None:
+        """Copy the clip into our TwelveLabs knowledge store (for Jockey's multi-angle grouping). Optional:
+        a key that may not write knowledge stores (HTTP 403) turns it off for the run instead of losing the clip."""
+        if getattr(self, "store_off", False):
+            return
+        try:
+            tl_store.add_clip(mp4, {"media_id": self.target_media_id, "event": a["event_type"], "team": a["team"],
+                                    "caption": a["caption"], "offset": (run.get("clip") or {}).get("source_start_offset")})
+        except Exception as e:
+            self.store_off = True
+            print(f"  NOTE   knowledge store off for this run ({str(e)[:120]})")
 
     # ---- safety net ----
 

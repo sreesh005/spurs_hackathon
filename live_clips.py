@@ -424,13 +424,38 @@ def _parts(name: str) -> list[str]:
     return [p for p in re.split(r"[\s'\-]+", (name or "").lower()) if len(p) > 3]
 
 
+def _plain(text: str) -> str:
+    import unicodedata
+
+    return "".join(c for c in unicodedata.normalize("NFKD", text or "") if not unicodedata.combining(c)).lower()
+
+
+def names_in_caption(caption: str, people: list[dict]) -> list[int]:
+    """Roster players named in a caption, by surname or desk short name ("Van Hecke", "Bentancur").
+    TwelveLabs names players in a caption only when sure; a name two players share is skipped."""
+    text = _plain(caption)
+    keys: dict[str, list[int]] = {}
+    for p in people:
+        for key in {_plain(p.get("short") or ""), _plain((p.get("name") or "").split()[-1] if p.get("name") else "")}:
+            if len(key) > 3:
+                keys.setdefault(key, []).append(int(p["id"]))
+    out: list[int] = []
+    for key, ids in keys.items():
+        if len(set(ids)) == 1 and re.search(r"\b" + re.escape(key) + r"\b", text) and ids[0] not in out:
+            out.append(ids[0])
+    return out
+
+
 def resolve_players(clip: Clip, people: list[dict]) -> list[int]:
     """Player IDs for a clip: the IDs the clipper tagged in ScorePlay, else the names TwelveLabs gave,
-    matched to the roster by full name, then by a distinctive part of it (Solanke, Kudus...)."""
+    matched to the roster by full name, then by a distinctive part of it (Solanke, Kudus...), else the
+    roster names that appear in the caption."""
     known = {int(p["id"]) for p in people}
     ids = [pid for pid in clip.player_ids if pid in known]
     if ids:
         return ids
+    if not clip.names:
+        return names_in_caption(clip.caption, people)
     out: list[int] = []
     for name in clip.names:
         low = name.lower().strip()

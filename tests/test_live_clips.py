@@ -307,9 +307,11 @@ def test_scoreplay_copy_replaces_the_local_file_and_updates_count(tmp_path):
 
 def test_players_added_later_in_scoreplay_show_up(tmp_path):
     index = lc.ClipIndex([tmp_path], library(), min_refresh=0)
-    index.add_scoreplay_logs(MEDIA, [sp_log(12, players=())])
+    untagged = sp_log(12, players=()); untagged["comment"] = "Equaliser at the far post."  # nobody named
+    index.add_scoreplay_logs(MEDIA, [untagged])
     assert index.feed()["counts"] == {}
-    index.add_scoreplay_logs(MEDIA, [sp_log(12, players=({"id": 2, "name": "Mohammed Kudus"},))])  # face recognition tagged him
+    tagged = sp_log(12, players=({"id": 2, "name": "Mohammed Kudus"},)); tagged["comment"] = untagged["comment"]
+    index.add_scoreplay_logs(MEDIA, [tagged])  # face recognition tagged him
     assert index.feed()["counts"] == {"2": 1}
 
 
@@ -323,3 +325,12 @@ def test_quick_and_full_logs_group_and_the_replay_joins(tmp_path):
     live = index.for_player(1)["live"]
     assert len(live) == 1
     assert [a["label"] for a in live[0]["angles"]] == ["Broadcast", "Broadcast replay"]
+
+
+def test_players_named_in_the_caption_when_scoreplay_has_no_tag():
+    people = PEOPLE + [{"id": 6, "name": "Jan Paul van Hecke", "short": "Van Hecke"}]
+    clip = lc.normalize_log(sp_log(30, players=()), MEDIA, T0)
+    clip.caption = "Jan Paul van Hecke receives a yellow card; Kinsky looks on."
+    assert lc.resolve_players(clip, people) == [6, 3] or sorted(lc.resolve_players(clip, people)) == [3, 6]
+    clip.caption = "Johnson shoots wide."  # two Johnsons: no guess
+    assert lc.resolve_players(clip, people) == []
