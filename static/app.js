@@ -1,3 +1,8 @@
+/* FRONT END / UI behavior.
+   Draws the desk: lineup, search, tabs, and the player reel.
+   Calls the backend at /api/library, /api/decide, and /api/read.
+   Page shell: static/index.html. Look: static/styles.css. */
+
 const TABS = [
   ["lineup", "Lineup"],
   ["best", "Best of the night"],

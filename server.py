@@ -1,4 +1,9 @@
-"""Next Post desk. ScorePlay library, TwelveLabs on demand, producer approvals."""
+"""BACKEND. Not the screen.
+
+Serves the Next Post desk and the /api routes.
+The front end is static/index.html, static/app.js, and static/styles.css.
+This file loads data/library.json, merges TwelveLabs reads, and stores approvals.
+"""
 
 from __future__ import annotations
 

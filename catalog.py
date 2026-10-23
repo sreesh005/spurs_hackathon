@@ -1,4 +1,8 @@
-"""Build the desk library from ScorePlay."""
+"""LIBRARY BUILDER. Not the UI.
+
+Pulls players and media from ScorePlay and writes data/library.json.
+server.py reads that file and serves it. The front end is the static/ folder.
+"""
 
 from __future__ import annotations
 
