@@ -29,19 +29,18 @@ function livePitchLines() {
 }
 
 function liveHtml() {
-  const mode = (() => { try { return localStorage.getItem("liveMode") || "both"; } catch (e) { return "both"; } })();
+  const mode = (() => { try { return localStorage.getItem("liveMode") === "map" ? "map" : "video"; } catch (e) { return "video"; } })();
   return `<section class="live">
     <div class="stage-bar">
       <div class="seg" id="live-seg">
         <button type="button" data-mode="video" class="${mode === "video" ? "on" : ""}">Video</button>
-        <button type="button" data-mode="both" class="${mode === "both" ? "on" : ""}">Video + map</button>
-        <button type="button" data-mode="map" class="${mode === "map" ? "on" : ""}">Map</button>
+        <button type="button" data-mode="map" class="${mode === "map" ? "on" : ""}">Dots</button>
       </div>
       <button type="button" class="ghost" id="live-menu">Menu</button>
     </div>
     <div class="stage m-${mode}" id="live-stage">
-      <div class="live-video"><img id="live-img" alt="" /><div class="live-badge" id="live-badge">connecting…</div><div class="live-alert" id="live-alert" hidden></div></div>
-      <div class="live-pitch-wrap">
+      <div class="live-video"><img id="live-img" alt="" /><button type="button" class="swap" data-swap title="Switch (M)">⇄</button><div class="live-badge" id="live-badge">connecting…</div><div class="live-alert" id="live-alert" hidden></div></div>
+      <div class="live-pitch-wrap"><button type="button" class="swap" data-swap title="Switch (M)">⇄</button>
         <div class="live-pitch" id="live-pitch">${livePitchLines()}<div id="live-dots"></div><div class="live-ball" id="live-ball" hidden></div>
           <div class="live-wait" id="live-wait">Getting ready… finding the pitch</div></div>
       </div>
@@ -348,12 +347,24 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("click", (event) => {
   const b = event.target.closest?.("#live-seg [data-mode]");
-  if (b) {
-    const st = document.getElementById("live-stage"); if (!st) return;
-    st.className = "stage m-" + b.dataset.mode;
-    document.querySelectorAll("#live-seg button").forEach((x) => x.classList.toggle("on", x === b));
-    try { localStorage.setItem("liveMode", b.dataset.mode); } catch (e) { /* fine */ }
-    return;
-  }
+  if (b) { liveSetMode(b.dataset.mode); return; }
   if (event.target.closest?.("#live-menu")) document.body.classList.toggle("show-nav");
+});
+
+function liveSetMode(m) {
+  const st = document.getElementById("live-stage"); if (!st) return;
+  st.className = "stage m-" + m;
+  document.querySelectorAll("#live-seg button").forEach((x) => x.classList.toggle("on", x.dataset.mode === m));
+  try { localStorage.setItem("liveMode", m); } catch (e) { /* fine */ }
+}
+document.addEventListener("click", (event) => {
+  const sw = event.target.closest?.("[data-swap]"), st = document.getElementById("live-stage");
+  if (sw && st) { event.preventDefault(); liveSetMode(st.classList.contains("m-map") ? "video" : "map"); return; }
+  // in Dots view the video is the small inset: click it to bring the video back
+  const inset = event.target.closest?.(".stage.m-map .live-video");
+  if (inset) liveSetMode("video");
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key.toLowerCase() !== "m" || /input|textarea|select/i.test(event.target.tagName) || event.metaKey || event.ctrlKey) return;
+  const st = document.getElementById("live-stage"); if (st) liveSetMode(st.classList.contains("m-map") ? "video" : "map");
 });
