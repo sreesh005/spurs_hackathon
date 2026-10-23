@@ -923,18 +923,20 @@ document.body.addEventListener("change", (event) => {
 
 document.getElementById("search").addEventListener("input", (event) => {
   state.query = event.target.value;
-  render();
+  if (state.tab === "live" && typeof liveSheet === "function") liveSheet();
+  else render();
 });
 
 document.getElementById("search").addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;
   const hit = findHit(state.query);
   if (!hit) return;
-  state.club = hit.club;
+  if (state.tab !== "live") state.club = hit.club;
   state.focus = hit.named_id || hit.heroes?.matchday?.id || null;
   state.reelCut = 0;
-  state.tab = "lineup";
-  render();
+  if (state.tab !== "live") state.tab = "lineup";
+  if (state.tab === "live" && typeof liveSheet === "function") liveSheet();
+  else render();
 });
 
 refresh().catch((error) => {

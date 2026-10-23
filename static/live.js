@@ -3,7 +3,8 @@
    Dots are matched to the lineup by position as a first guess; use the picker under the pitch to correct one. */
 
 const LIVE_URL = (new URLSearchParams(location.search).get("live")) || localStorage.getItem("liveUrl") || "http://127.0.0.1:8766";
-const LIVE = { slot: {}, seen: {}, last: {}, forced: false, manual: {}, orient: null, state: null, ok: false, assign: {}, picked: null, guessed: false, timer: null, miss: 0 };
+const COMM_URL = (() => { try { return localStorage.getItem("commUrl") || "http://127.0.0.1:8767"; } catch (e) { return "http://127.0.0.1:8767"; } })();
+const LIVE = { tx: { after: 0, lines: [], mentions: [], miss: 0 }, n: -1, busy: false, slot: {}, seen: {}, last: {}, forced: false, manual: {}, orient: null, state: null, ok: false, assign: {}, picked: null, guessed: false, timer: null, miss: 0 };
 try { LIVE.assign = JSON.parse(localStorage.getItem("liveAssign") || "{}"); } catch (e) { LIVE.assign = {}; }
 
 function liveSave() {
@@ -30,12 +31,18 @@ function livePitchLines() {
 function liveHtml() {
   return `<section class="live">
     <div class="live-top">
-      <div class="live-video"><img id="live-img" alt="" src="${LIVE_URL}/video.mjpg" /><div class="live-badge" id="live-badge">connecting…</div><div class="live-alert" id="live-alert" hidden></div></div>
+      <div class="live-video"><img id="live-img" alt="" /><div class="live-badge" id="live-badge">connecting…</div><div class="live-alert" id="live-alert" hidden></div></div>
     </div>
     <div class="live-pitch-wrap">
       <div class="live-pitch" id="live-pitch">${livePitchLines()}<div id="live-dots"></div><div class="live-ball" id="live-ball" hidden></div>
         <div class="live-wait" id="live-wait">Getting ready… finding the pitch</div></div>
       <div class="live-pick" id="live-pick"></div>
+    </div>
+    <div class="live-tx" id="live-tx">
+      <div class="tx-head"><b>Commentary</b><span class="tx-dot" id="tx-dot"></span><span class="meta" id="tx-status">connecting…</span>
+        <label class="tx-follow"><input type="checkbox" id="tx-follow" checked /> Follow the announcer</label></div>
+      <div class="tx-chips" id="tx-chips"></div>
+      <div class="tx-lines" id="tx-lines"><p class="meta">Waiting for the commentary…</p></div>
     </div>
   </section>`;
 }
@@ -175,25 +182,103 @@ function liveSheet() {
   bindPlayers(); mountReel(); liveClips();
 }
 
+function liveApply(st) {
+  LIVE.miss = 0; LIVE.state = st;
+  const badge = document.getElementById("live-badge"), wait = document.getElementById("live-wait");
+  if (badge) badge.textContent = !st.ready ? "getting ready" : st.cutaway ? "off the main camera" : "live";
+  if (wait) { wait.hidden = st.ready && !st.cutaway; wait.textContent = !st.ready ? "Getting ready… finding the pitch" : "Waiting for the main camera…"; }
+  if (!st.ready) return;
+  const spurs = st.players.filter((p) => p.team === "tot");
+  if (state.data) liveMatch(spurs);
+  liveDots(st); liveAlerts(st);
+}
+
 function liveTick() {
-  if (state.tab !== "live" || !document.getElementById("live-dots")) return;
-  fetch(LIVE_URL + "/state.json", { cache: "no-store" }).then((r) => r.json()).then((st) => {
-    LIVE.miss = 0; LIVE.state = st;
-    const badge = document.getElementById("live-badge"), wait = document.getElementById("live-wait");
-    if (badge) badge.textContent = !st.ready ? "getting ready" : st.cutaway ? "off the main camera" : "live";
-    if (wait) { wait.hidden = st.ready && !st.cutaway; wait.textContent = !st.ready ? "Getting ready… finding the pitch" : "Waiting for the main camera…"; }
-    if (!st.ready) return;
-    const spurs = st.players.filter((p) => p.team === "tot");
-    if (state.data) liveMatch(spurs); liveDots(st); liveAlerts(st);
+  // The picture and the dots are applied in the same step: fetch the numbered frame that belongs to this state, then draw both.
+  if (state.tab !== "live" || !document.getElementById("live-dots") || LIVE.busy) return;
+  LIVE.busy = true;
+  fetch(LIVE_URL + "/state.json", { cache: "no-store" }).then((r) => r.json()).then(async (st) => {
+    const img = document.getElementById("live-img");
+    if (st.n && st.n === LIVE.n) return;                              // nothing new yet
+    if (st.n && img && !LIVE.noFrames) {
+      const r = await fetch(`${LIVE_URL}/frame/${st.n}.jpg`, { cache: "no-store" });
+      if (r.ok) {
+        const url = URL.createObjectURL(await r.blob());
+        img.src = url; try { await img.decode(); } catch (e) { /* draw anyway */ }
+        if (LIVE.url) URL.revokeObjectURL(LIVE.url); LIVE.url = url;
+      } else if (r.status === 404 && !LIVE.n) { LIVE.noFrames = true; img.src = LIVE_URL + "/video.mjpg"; }
+    } else if (!st.n && img && !img.src) img.src = LIVE_URL + "/video.mjpg";
+    LIVE.n = st.n || 0;
+    liveApply(st);
   }).catch((err) => {
     if (!(err instanceof TypeError && /fetch/i.test(err.message))) console.error("live tick failed:", err);
-    if (++LIVE.miss > 3) { const badge = document.getElementById("live-badge"); if (badge) badge.textContent = "no live feed at " + LIVE_URL; }
-  });
+    if (++LIVE.miss > 20) { const badge = document.getElementById("live-badge"); if (badge) badge.textContent = "no live feed at " + LIVE_URL; }
+  }).finally(() => { LIVE.busy = false; });
+}
+
+// ---------------------------------------------------------------- announcer transcript
+let LIVE_NAMES = null;
+function liveNameIndex() {
+  if (LIVE_NAMES || !state.data) return LIVE_NAMES || [];
+  const strip = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const out = [], seen = new Set();
+  for (const p of liveRoster()) {
+    const forms = new Set([strip(p.short), strip(p.name), strip(p.name).split(/\s+/).pop(), strip(p.short).split(/\s+/).pop()]);
+    for (const f of forms) { if (f.length < 3 || seen.has(f)) continue; seen.add(f); out.push({ f, p, re: new RegExp("\\b" + f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+") + "(?:'s)?\\b", "gi") }); }
+  }
+  return (LIVE_NAMES = out);
+}
+function liveFindNames(text) {
+  const plain = String(text).normalize("NFD").replace(/[\u0300-\u036f]/g, ""), hits = [];
+  for (const n of liveNameIndex()) { n.re.lastIndex = 0; let m; while ((m = n.re.exec(plain))) hits.push({ at: m.index, len: m[0].length, p: n.p }); }
+  hits.sort((a, b) => a.at - b.at || b.len - a.len);
+  const clean = []; let end = -1; for (const h of hits) if (h.at >= end) { clean.push(h); end = h.at + h.len; }
+  return { plain, hits: clean };
+}
+function liveFocusPlayer(p, why) {
+  state.focus = Number(p.id); state.reelCut = 0; liveSheet();
+  const v = document.getElementById("reel-video"); if (v) { v.muted = true; v.play?.().catch(() => {}); }
+}
+function liveChips() {
+  const box = document.getElementById("tx-chips"); if (!box) return;
+  box.innerHTML = LIVE.tx.mentions.length
+    ? `<span class="meta">Just named</span>` + LIVE.tx.mentions.map((m) => `<button type="button" class="tx-chip ${Number(state.focus) === Number(m.p.id) ? "on" : ""}" data-who="${m.p.id}">${m.p.thumb ? `<img src="${m.p.thumb}" alt="" />` : ""}${esc(m.p.short)}</button>`).join("")
+    : `<span class="meta">Players the announcer names will show up here, with their clips on the right.</span>`;
+}
+function liveTxRender() {
+  const box = document.getElementById("tx-lines"); if (!box) return;
+  const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+  box.innerHTML = LIVE.tx.lines.slice(-40).map((l) => {
+    let html = "", at = 0;
+    for (const h of l.hits) { html += esc(l.plain.slice(at, h.at)) + `<mark data-who="${h.p.id}">${esc(l.plain.slice(h.at, h.at + h.len))}</mark>`; at = h.at + h.len; }
+    html += esc(l.plain.slice(at));
+    return `<p class="${l.fresh ? "fresh" : ""}"><time>${new Date(l.t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time> ${html}</p>`;
+  }).join("") || '<p class="meta">Waiting for the commentary…</p>';
+  if (stick) box.scrollTop = box.scrollHeight;
+  for (const l of LIVE.tx.lines) l.fresh = false;
+}
+function liveTxTick() {
+  if (state.tab !== "live" || !document.getElementById("live-tx")) return;
+  const dot = document.getElementById("tx-dot"), st = document.getElementById("tx-status");
+  fetch(`${COMM_URL}/transcript.json?after=${LIVE.tx.after}`, { cache: "no-store" }).then((r) => r.json()).then((d) => {
+    LIVE.tx.miss = 0; if (dot) dot.className = "tx-dot on"; if (st) st.textContent = d.ready ? "listening" : "starting the recogniser…";
+    let changed = false, last = null;
+    for (const seg of d.segments || []) {
+      if (seg.id <= LIVE.tx.after) continue;
+      LIVE.tx.after = seg.id;
+      const { plain, hits } = liveFindNames(seg.text);
+      LIVE.tx.lines.push({ t: seg.t, plain, hits, fresh: true }); changed = true;
+      for (const h of hits) { LIVE.tx.mentions = LIVE.tx.mentions.filter((m) => m.p.id !== h.p.id); LIVE.tx.mentions.push({ p: h.p, t: Date.now() }); last = h.p; }
+    }
+    LIVE.tx.mentions = LIVE.tx.mentions.slice(-6);
+    if (changed) { liveTxRender(); if (last) { const follow = document.getElementById("tx-follow"); if (!follow || follow.checked) { if (Number(state.focus) !== Number(last.id)) liveFocusPlayer(last); } } liveChips(); }
+  }).catch(() => { if (++LIVE.tx.miss > 3) { if (dot) dot.className = "tx-dot"; if (st) st.textContent = "no commentary feed — run commentary.py"; } });
 }
 
 function mountLive() {
   livePicker(); liveClips();
-  if (!LIVE.timer) LIVE.timer = setInterval(liveTick, 80);
+  liveChips();
+  if (!LIVE.timer) { LIVE.timer = setInterval(liveTick, 40); setInterval(liveTxTick, 1000); }
 }
 
 document.addEventListener("click", (event) => {
@@ -244,3 +329,10 @@ document.addEventListener("click", (event) => {
   LIVE.slot = {}; for (const k of Object.keys(LIVE.assign)) {}
   liveSave(); if (LIVE.state) { liveMatch(LIVE.state.players.filter((p) => p.team === "tot")); liveDots(LIVE.state); }
 }, true);
+
+document.addEventListener("click", (event) => {
+  const w = event.target.closest?.("[data-who]");
+  if (!w) return;
+  const p = liveRoster().find((x) => Number(x.id) === Number(w.dataset.who));
+  if (p) { const f = document.getElementById("tx-follow"); liveFocusPlayer(p); liveChips(); }
+});
