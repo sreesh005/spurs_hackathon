@@ -4,6 +4,7 @@
    Page shell: static/index.html. Look: static/styles.css. */
 
 const TABS = [
+  ["live", "Live dots"],
   ["lineup", "Lineup"],
   ["best", "Best of the night"],
   ["underrated", "Underrated"],
@@ -24,7 +25,7 @@ const state = {
   data: null,
   club: "sas",
   audience: "matchday",
-  tab: "lineup",
+  tab: "live",
   focus: null,
   angle: {},
   reel: null,
@@ -686,16 +687,18 @@ function renderChrome() {
 
 function render() {
   try {
+    if (state.tab === "live" && state.club !== "thfc" && state.data.clubs.some((item) => item.id === "thfc")) { state.club = "thfc"; state.focus = null; }
     renderChrome();
     let rest = "";
-    if (state.tab !== "lineup") {
+    if (state.tab !== "lineup" && state.tab !== "live") {
       (RENDER[state.tab] || renderLineup)();
       rest = $("main").innerHTML;
     }
     const open = people().some((person) => Number(person.id) === Number(state.focus));
-    $("main").innerHTML = `<div class="desk ${open ? "with-reel" : ""}">${lineupHtml()}${sheetHtml()}</div>${rest ? `<section id="rest">${rest}</section>` : ""}`;
+    $("main").innerHTML = `<div class="desk ${open ? "with-reel" : ""}">${state.tab === "live" ? liveHtml() : lineupHtml()}${sheetHtml()}</div>${rest ? `<section id="rest">${rest}</section>` : ""}`;
     bindPlayers();
     mountReel();
+    if (state.tab === "live") mountLive();
   } catch (error) {
     const note = document.createElement("p");
     note.className = "status";
