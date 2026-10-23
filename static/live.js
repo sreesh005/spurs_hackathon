@@ -199,7 +199,7 @@ function liveApply(st) {
   if (!st.ready) return;
   const spurs = st.players.filter((p) => p.team === "tot");
   if (state.data) liveMatch(spurs);
-  liveDots(st); liveAlerts(st);
+  liveDots(st); liveAlerts(st); liveClipTx(st);
 }
 
 function liveTick() {
@@ -261,14 +261,47 @@ function liveTxRender() {
     let html = "", at = 0;
     for (const h of l.hits) { html += esc(l.plain.slice(at, h.at)) + `<mark data-who="${h.p.id}">${esc(l.plain.slice(h.at, h.at + h.len))}</mark>`; at = h.at + h.len; }
     html += esc(l.plain.slice(at));
-    return `<p class="${l.fresh ? "fresh" : ""}"><time>${new Date(l.t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time> ${html}</p>`;
+    return `<p class="${l.fresh ? "fresh" : ""}"><time>${l.label || new Date(l.t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time> ${html}</p>`;
   }).join("") || '<p class="meta">Waiting for the commentary…</p>';
   if (stick) box.scrollTop = box.scrollHeight;
   for (const l of LIVE.tx.lines) l.fresh = false;
 }
+function liveAddLine(text, t, label) {
+  const { plain, hits } = liveFindNames(text);
+  LIVE.tx.lines.push({ t, plain, hits, fresh: true, label });
+  let last = null;
+  for (const h of hits) { LIVE.tx.mentions = LIVE.tx.mentions.filter((m) => m.p.id !== h.p.id); LIVE.tx.mentions.push({ p: h.p, t: Date.now() }); last = h.p; }
+  LIVE.tx.mentions = LIVE.tx.mentions.slice(-6);
+  return last;
+}
+function liveAfterLines(last) {
+  liveTxRender();
+  if (last) { const follow = document.getElementById("tx-follow"); if ((!follow || follow.checked) && Number(state.focus) !== Number(last.id)) liveFocusPlayer(last); }
+  liveChips();
+}
+// Twelve Labs transcript of the demo clip: lines appear as the video reaches them, and start over when the loop does
+function liveClipTx(st) {
+  const T = LIVE.tx.clip; if (!T || !st.clip) return;
+  const pos = st.clip.pos, tx = LIVE.tx;
+  if (pos < (tx.lastPos ?? 0) - 2) { tx.lines = []; tx.shown = 0; liveTxRender(); }
+  tx.lastPos = pos; tx.shown = tx.shown || 0;
+  let last = null, any = false;
+  while (tx.shown < T.length && T[tx.shown].start <= pos) { const s = T[tx.shown++]; last = liveAddLine(s.text, 0, fmtClip(s.start)) || last; any = true; }
+  if (any) liveAfterLines(last);
+}
+function fmtClip(x) { const m = Math.floor(x / 60), s = Math.floor(x % 60); return m + ":" + String(s).padStart(2, "0"); }
+
 function liveTxTick() {
   if (state.tab !== "live" || !document.getElementById("live-tx")) return;
   const dot = document.getElementById("tx-dot"), st = document.getElementById("tx-status");
+  if (!LIVE.tx.clip) {
+    fetch(`${COMM_URL}/clip_transcript.json`, { cache: "no-store" }).then((r) => r.json()).then((d) => {
+      if (d.sentences && d.sentences.length) { LIVE.tx.clip = d.sentences; LIVE.tx.shown = 0; LIVE.tx.lines = []; LIVE.tx.lastPos = 0; }
+      else if (st) st.textContent = d.ready ? "no speech found in the clip" : "waiting for the Twelve Labs transcript…";
+      if (dot) dot.className = "tx-dot" + (d.sentences && d.sentences.length ? " on" : "");
+    }).catch(() => {});
+  }
+  if (LIVE.tx.clip) { if (st) st.textContent = "Twelve Labs transcript"; return; }
   fetch(`${COMM_URL}/transcript.json?after=${LIVE.tx.after}`, { cache: "no-store" }).then((r) => r.json()).then((d) => {
     LIVE.tx.miss = 0; if (dot) dot.className = "tx-dot on"; if (st) st.textContent = d.ready ? "listening" : "starting the recogniser…";
     let changed = false, last = null;
