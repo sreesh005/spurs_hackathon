@@ -6,7 +6,17 @@ const LIVE_URL = (new URLSearchParams(location.search).get("live")) || localStor
 const LIVE = { state: null, ok: false, assign: {}, picked: null, guessed: false, timer: null, miss: 0 };
 try { LIVE.assign = JSON.parse(localStorage.getItem("liveAssign") || "{}"); } catch (e) { LIVE.assign = {}; }
 
-function liveSave() { try { localStorage.setItem("liveAssign", JSON.stringify(LIVE.assign)); } catch (e) {} }
+function liveSave() {
+  try { localStorage.setItem("liveAssign", JSON.stringify(LIVE.assign)); } catch (e) {}
+  clearTimeout(LIVE.pushT); LIVE.pushT = setTimeout(livePush, 150);
+}
+
+function livePush() {
+  // tell the tracker which dot is which shirt number, so the numbers also appear on the boxes in the video
+  const labels = {};
+  for (const [dot, pid] of Object.entries(LIVE.assign)) { const p = liveName(pid); if (p) labels[dot] = p.number ? "#" + p.number : p.short; }
+  fetch(LIVE_URL + "/assign", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ labels }) }).catch(() => {});
+}
 
 function liveRoster() {
   const c = state.data.clubs.find((x) => x.id === "thfc");
@@ -61,11 +71,17 @@ function liveDots(st) {
     seen.add(String(p.id));
     let el = box.querySelector(`[data-dot="${p.id}"]`);
     if (!el) { el = document.createElement("button"); el.type = "button"; el.dataset.dot = p.id; box.appendChild(el); }
-    el.className = "dot " + p.team + (LIVE.picked === String(p.id) ? " sel" : "");
+    const person0 = p.team === "tot" ? liveName(LIVE.assign[p.id]) : null;
+    el.className = "dot " + p.team + (person0 && person0.thumb ? " photo" : "") + (LIVE.picked === String(p.id) ? " sel" : "");
     el.style.left = (p.x * 100) + "%"; el.style.top = (p.y * 100) + "%";
     const person = p.team === "tot" ? liveName(LIVE.assign[p.id]) : null;
     const label = person ? (person.number ? "#" + person.number : person.short) : "";
-    if (el.dataset.label !== label) { el.dataset.label = label; el.innerHTML = label ? `<span>${esc(label)}</span>` : ""; }
+    const photo = person && person.thumb ? person.thumb : "";
+    if (el.dataset.label !== label || el.dataset.photo !== photo) {
+      el.dataset.label = label; el.dataset.photo = photo;
+      el.style.backgroundImage = photo ? `url("${photo}")` : "";
+      el.innerHTML = label ? `<span>${esc(label)}</span>` : "";
+    }
     el.title = person ? person.short : (p.team === "tot" ? "Spurs — click to say who" : p.team === "mnu" ? "Man United" : "Official");
   }
   box.querySelectorAll("[data-dot]").forEach((el) => { if (!seen.has(el.dataset.dot)) el.remove(); });
@@ -86,7 +102,7 @@ function liveAlerts(st) {
 function livePicker() {
   const holder = document.getElementById("live-pick");
   if (!holder) return;
-  if (LIVE.picked == null) { holder.innerHTML = `<span class="meta">Click a Spurs dot for that player's reel. Names are a first guess from position; correct one here.</span>`; return; }
+  if (LIVE.picked == null) { holder.innerHTML = `<span class="meta">Check the names before kick-off: the shirt numbers are a first guess from position. Click any Spurs dot to fix it or open that player's reel.</span>`; return; }
   const cur = LIVE.assign[LIVE.picked];
   const opts = liveRoster().map((p) => `<option value="${p.id}" ${Number(cur) === Number(p.id) ? "selected" : ""}>${esc(p.number ? "#" + p.number + " " : "")}${esc(p.short)}</option>`).join("");
   holder.innerHTML = `<label class="meta">This dot is <select id="live-who"><option value="">— pick —</option>${opts}</select></label>`;
@@ -114,7 +130,8 @@ function liveTick() {
     const spurs = st.players.filter((p) => p.team === "tot");
     if (!LIVE.guessed && state.data && liveGuess(spurs)) LIVE.guessed = true;
     liveDots(st); liveAlerts(st);
-  }).catch(() => {
+  }).catch((err) => {
+    if (!(err instanceof TypeError && /fetch/i.test(err.message))) console.error("live tick failed:", err);
     if (++LIVE.miss > 3) { const badge = document.getElementById("live-badge"); if (badge) badge.textContent = "no live feed at " + LIVE_URL; }
   });
 }
