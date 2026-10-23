@@ -308,7 +308,7 @@ function sheetHtml() {
       ? empty("Nothing in the library matches that.")
       : "";
   if (!focus) {
-    return `<div class="desk-side">${pulled}<p class="lede">Click a shirt. The reel stays open while you pick clips.</p></div>`;
+    return `<div class="desk-side">${pulled}<p class="lede">${state.tab === "live" ? "Players the announcer names show up here with their clips. Or click a dot on the map." : "Click a shirt. The reel stays open while you pick clips."}</p></div>`;
   }
   const reel = topReel(focus.id);
   const picks = reel
@@ -695,6 +695,7 @@ function render() {
       rest = $("main").innerHTML;
     }
     const open = people().some((person) => Number(person.id) === Number(state.focus));
+    document.body.classList.toggle("live-mode", state.tab === "live");
     $("main").innerHTML = `<div class="desk ${open ? "with-reel" : ""}">${state.tab === "live" ? liveHtml() : lineupHtml()}${sheetHtml()}</div>${rest ? `<section id="rest">${rest}</section>` : ""}`;
     bindPlayers();
     mountReel();

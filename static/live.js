@@ -29,15 +29,24 @@ function livePitchLines() {
 }
 
 function liveHtml() {
+  const mode = (() => { try { const m = localStorage.getItem("liveMode"); return ["video", "map", "pip", "pipmap"].includes(m) ? m : "pip"; } catch (e) { return "pip"; } })();
   return `<section class="live">
-    <div class="live-top">
-      <div class="live-video"><img id="live-img" alt="" /><div class="live-badge" id="live-badge">connecting…</div><div class="live-alert" id="live-alert" hidden></div></div>
+    <div class="stage-bar">
+      <div class="seg" id="live-seg">
+        <button type="button" data-mode="video" class="${mode === "video" ? "on" : ""}">Video</button>
+        <button type="button" data-mode="map" class="${mode === "map" ? "on" : ""}">Dots</button>
+        <button type="button" data-mode="pip" class="${mode === "pip" || mode === "pipmap" ? "on" : ""}">Video + dots</button>
+      </div>
+      <button type="button" class="ghost" id="live-menu">Menu</button>
     </div>
-    <div class="live-pitch-wrap">
-      <div class="live-pitch" id="live-pitch">${livePitchLines()}<div id="live-dots"></div><div class="live-ball" id="live-ball" hidden></div>
-        <div class="live-wait" id="live-wait">Getting ready… finding the pitch</div></div>
-      <div class="live-pick" id="live-pick"></div>
+    <div class="stage m-${mode}" id="live-stage">
+      <div class="live-video"><img id="live-img" alt="" /><button type="button" class="swap" data-swap title="Switch (M)">⇄</button><div class="live-badge" id="live-badge">connecting…</div><div class="live-alert" id="live-alert" hidden></div></div>
+      <div class="live-pitch-wrap"><button type="button" class="swap" data-swap title="Switch (M)">⇄</button>
+        <div class="live-pitch" id="live-pitch">${livePitchLines()}<div id="live-dots"></div><div class="live-ball" id="live-ball" hidden></div>
+          <div class="live-wait" id="live-wait">Getting ready… finding the pitch</div></div>
+      </div>
     </div>
+    <div class="live-pick" id="live-pick"></div>
     <div class="live-tx" id="live-tx">
       <div class="tx-head"><b>Commentary</b><span class="tx-dot" id="tx-dot"></span><span class="meta" id="tx-status">connecting…</span>
         <label class="tx-follow"><input type="checkbox" id="tx-follow" checked /> Follow the announcer</label></div>
@@ -190,7 +199,7 @@ function liveApply(st) {
   if (!st.ready) return;
   const spurs = st.players.filter((p) => p.team === "tot");
   if (state.data) liveMatch(spurs);
-  liveDots(st); liveAlerts(st);
+  liveDots(st); liveAlerts(st); liveClipTx(st);
 }
 
 function liveTick() {
@@ -252,14 +261,47 @@ function liveTxRender() {
     let html = "", at = 0;
     for (const h of l.hits) { html += esc(l.plain.slice(at, h.at)) + `<mark data-who="${h.p.id}">${esc(l.plain.slice(h.at, h.at + h.len))}</mark>`; at = h.at + h.len; }
     html += esc(l.plain.slice(at));
-    return `<p class="${l.fresh ? "fresh" : ""}"><time>${new Date(l.t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time> ${html}</p>`;
+    return `<p class="${l.fresh ? "fresh" : ""}"><time>${l.label || new Date(l.t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time> ${html}</p>`;
   }).join("") || '<p class="meta">Waiting for the commentary…</p>';
   if (stick) box.scrollTop = box.scrollHeight;
   for (const l of LIVE.tx.lines) l.fresh = false;
 }
+function liveAddLine(text, t, label) {
+  const { plain, hits } = liveFindNames(text);
+  LIVE.tx.lines.push({ t, plain, hits, fresh: true, label });
+  let last = null;
+  for (const h of hits) { LIVE.tx.mentions = LIVE.tx.mentions.filter((m) => m.p.id !== h.p.id); LIVE.tx.mentions.push({ p: h.p, t: Date.now() }); last = h.p; }
+  LIVE.tx.mentions = LIVE.tx.mentions.slice(-6);
+  return last;
+}
+function liveAfterLines(last) {
+  liveTxRender();
+  if (last) { const follow = document.getElementById("tx-follow"); if ((!follow || follow.checked) && Number(state.focus) !== Number(last.id)) liveFocusPlayer(last); }
+  liveChips();
+}
+// Twelve Labs transcript of the demo clip: lines appear as the video reaches them, and start over when the loop does
+function liveClipTx(st) {
+  const T = LIVE.tx.clip; if (!T || !st.clip) return;
+  const pos = st.clip.pos, tx = LIVE.tx;
+  if (pos < (tx.lastPos ?? 0) - 2) { tx.lines = []; tx.shown = 0; liveTxRender(); }
+  tx.lastPos = pos; tx.shown = tx.shown || 0;
+  let last = null, any = false;
+  while (tx.shown < T.length && T[tx.shown].start <= pos) { const s = T[tx.shown++]; last = liveAddLine(s.text, 0, fmtClip(s.start)) || last; any = true; }
+  if (any) liveAfterLines(last);
+}
+function fmtClip(x) { const m = Math.floor(x / 60), s = Math.floor(x % 60); return m + ":" + String(s).padStart(2, "0"); }
+
 function liveTxTick() {
   if (state.tab !== "live" || !document.getElementById("live-tx")) return;
   const dot = document.getElementById("tx-dot"), st = document.getElementById("tx-status");
+  if (!LIVE.tx.clip) {
+    fetch(`${COMM_URL}/clip_transcript.json`, { cache: "no-store" }).then((r) => r.json()).then((d) => {
+      if (d.sentences && d.sentences.length) { LIVE.tx.clip = d.sentences; LIVE.tx.shown = 0; LIVE.tx.lines = []; LIVE.tx.lastPos = 0; }
+      else if (st) st.textContent = d.ready ? "no speech found in the clip" : "waiting for the Twelve Labs transcript…";
+      if (dot) dot.className = "tx-dot" + (d.sentences && d.sentences.length ? " on" : "");
+    }).catch(() => {});
+  }
+  if (LIVE.tx.clip) { if (st) st.textContent = "Twelve Labs transcript"; return; }
   fetch(`${COMM_URL}/transcript.json?after=${LIVE.tx.after}`, { cache: "no-store" }).then((r) => r.json()).then((d) => {
     LIVE.tx.miss = 0; if (dot) dot.className = "tx-dot on"; if (st) st.textContent = d.ready ? "listening" : "starting the recogniser…";
     let changed = false, last = null;
@@ -335,4 +377,32 @@ document.addEventListener("click", (event) => {
   if (!w) return;
   const p = liveRoster().find((x) => Number(x.id) === Number(w.dataset.who));
   if (p) { const f = document.getElementById("tx-follow"); liveFocusPlayer(p); liveChips(); }
+});
+
+document.addEventListener("click", (event) => {
+  const b = event.target.closest?.("#live-seg [data-mode]");
+  if (b) { const st0 = document.getElementById("live-stage"); liveSetMode(b.dataset.mode === "pip" && st0?.classList.contains("m-pipmap") ? "pipmap" : b.dataset.mode); return; }
+  if (event.target.closest?.("#live-menu")) document.body.classList.toggle("show-nav");
+});
+
+function liveFlip() {
+  const st = document.getElementById("live-stage"); if (!st) return;
+  const cur = ["video", "map", "pip", "pipmap"].find((m) => st.classList.contains("m-" + m));
+  liveSetMode({ video: "map", map: "video", pip: "pipmap", pipmap: "pip" }[cur] || "pip");
+}
+function liveSetMode(m) {
+  const st = document.getElementById("live-stage"); if (!st) return;
+  st.className = "stage m-" + m;
+  document.querySelectorAll("#live-seg button").forEach((x) => x.classList.toggle("on", x.dataset.mode === (m === "pipmap" ? "pip" : m)));
+  try { localStorage.setItem("liveMode", m); } catch (e) { /* fine */ }
+}
+document.addEventListener("click", (event) => {
+  const sw = event.target.closest?.("[data-swap]"), st = document.getElementById("live-stage");
+  if (sw && st) { event.preventDefault(); liveFlip(); return; }
+  // the small inset picture swaps places with the big one when clicked (the map inset keeps its own dot clicks)
+  if (event.target.closest?.(".stage.m-pipmap .live-video")) liveSetMode("pip");
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key.toLowerCase() !== "m" || /input|textarea|select/i.test(event.target.tagName) || event.metaKey || event.ctrlKey) return;
+  liveFlip();
 });
