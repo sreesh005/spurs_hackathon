@@ -1,0 +1,31 @@
+# docker compose up -d     starts the desk (http://<this machine>:8765) and the auto-clipper
+# docker compose logs -f clipper     watch the clipper
+# Needs .env (SCOREPLAY_API_KEY, TWELVELABS_API_KEY) and sarang/.env (copy sarang/.env.example) next to this file.
+services:
+  desk:
+    build: .
+    image: next-post
+    env_file: .env
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./data:/app/data           # the library and approvals survive restarts
+    restart: unless-stopped
+
+  clipper:
+    image: next-post
+    depends_on: [desk]
+    env_file: sarang/.env
+    environment:
+      DRY_RUN: "false"             # write clips back to ScorePlay
+    working_dir: /app/sarang
+    # follows ScorePlay's live recording; when it ends, waits for the next one
+    command: ["uv", "run", "--no-dev", "pipeline", "live", "--minutes", "720"]
+    volumes:
+      - clipper-runs:/app/sarang/runs
+      - clipper-clips:/app/sarang/clips
+    restart: unless-stopped
+
+volumes:
+  clipper-runs:
+  clipper-clips:

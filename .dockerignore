@@ -1,0 +1,13 @@
+.git
+.env
+sarang/.env
+data/
+**/__pycache__/
+.pytest_cache/
+sarang/.venv/
+sarang/clips/
+sarang/runs/
+sarang/segments/
+sarang/models/
+sarang/state.db
+*.pdf
