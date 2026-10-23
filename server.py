@@ -3,11 +3,15 @@
 Serves the Next Post desk and the /api routes.
 The front end is static/index.html, static/app.js, and static/styles.css.
 This file loads data/library.json, merges TwelveLabs reads, and stores approvals.
+Live dots: /api/live/* serves each player's clips as the auto-clipper captures them (live_clips.py).
+Demo mode (NEXT_POST_DEMO=1, or no ScorePlay key and no saved library) runs on demo/ footage.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import re
 from pathlib import Path
 
 import urllib.error
@@ -21,18 +25,54 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from catalog import DATA, LIBRARY_PATH, build_library, load_env, load_library
+from live_clips import ClipIndex
 
 ROOT = Path(__file__).resolve().parent
 READS_PATH = DATA / "reads.json"
 DECISIONS_PATH = DATA / "decisions.json"
 LIBRARY: dict = {}
+DEMO_MEDIA = DATA / "demo" / "media"
+
+
+def _demo_wanted() -> bool:
+    flag = os.environ.get("NEXT_POST_DEMO", "").strip().lower()
+    if flag in ("1", "true", "yes"):
+        return True
+    if flag in ("0", "false", "no"):
+        return False
+    return not LIBRARY_PATH.exists() and not load_env().get("SCOREPLAY_API_KEY")
+
+
+DEMO = _demo_wanted()
+
+
+def _clipper_roots() -> list[Path]:
+    """Folders laid out like sarang/: runs/live_*.jsonl, clips/*.mp4, optional scoreplay_uploads.jsonl."""
+    raw = os.environ.get("CLIPPER_DIRS", "").strip()
+    if raw:
+        return [Path(part).expanduser().resolve() for part in raw.split(os.pathsep) if part.strip()]
+    # The demo clipper's folder is only read in demo mode, so demo clips never show up during a real match.
+    return [ROOT / "sarang", DATA / "demo-clipper"] if DEMO else [ROOT / "sarang"]
+
+
+CLIPS = ClipIndex(_clipper_roots())
+
+
+def _load() -> dict:
+    if DEMO:
+        from demo.fixture import load_demo_library
+
+        print("Next Post: demo mode (demo/ footage, no ScorePlay calls)")
+        return load_demo_library()
+    return load_library() if LIBRARY_PATH.exists() else build_library()
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     global LIBRARY
     DATA.mkdir(exist_ok=True)
-    LIBRARY = load_library() if LIBRARY_PATH.exists() else build_library()
+    LIBRARY = _load()
+    CLIPS.set_library(LIBRARY)
     yield
 
 
@@ -218,7 +258,8 @@ def library() -> dict:
 @app.post("/api/rebuild")
 def rebuild() -> dict:
     global LIBRARY
-    LIBRARY = build_library()
+    LIBRARY = _load() if DEMO else build_library()
+    CLIPS.set_library(LIBRARY)
     return {"plays": len(LIBRARY["plays"]), "photos": len(LIBRARY["photos"])}
 
 
@@ -253,9 +294,35 @@ def read_clip(body: ReadRequest) -> dict:
     return result
 
 
+@app.get("/api/live/feed")
+def live_feed() -> dict:
+    """Polled by the Live dots tab: clip counts per player and the newest captures."""
+    out = CLIPS.feed()
+    out["demo"] = DEMO
+    return out
+
+
+@app.get("/api/live/player/{player_id}")
+def live_player(player_id: int) -> dict:
+    """One player's collection: plays captured live (each with every angle found), else the ScorePlay library."""
+    return CLIPS.for_player(player_id)
+
+
+@app.get("/api/live/media/{name}")
+def live_media(name: str) -> FileResponse:
+    """A clip the auto-clipper cut. Looked up by key in the index, never by a path from the request."""
+    key = re.sub(r"\.mp4$", "", name)
+    path = CLIPS.media_path(key)
+    if not path or not path.is_file():
+        raise HTTPException(status_code=404, detail="Clip not found")
+    return FileResponse(path, media_type="video/mp4")
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(ROOT / "static" / "index.html")
 
 
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
+DEMO_MEDIA.mkdir(parents=True, exist_ok=True)
+app.mount("/demo-media", StaticFiles(directory=DEMO_MEDIA), name="demo-media")

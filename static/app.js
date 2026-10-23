@@ -300,6 +300,7 @@ function lineupHtml() {
 }
 
 function sheetHtml() {
+  if (state.tab === "live" && typeof liveSheetHtml === "function") return liveSheetHtml();
   const hit = state.query.trim() ? findHit(state.query) : null;
   const focus = people().find((person) => Number(person.id) === Number(state.focus));
   const pulled = hit
@@ -853,7 +854,8 @@ document.addEventListener(
 );
 
 document.body.addEventListener("click", (event) => {
-  const clubButton = event.target.closest("[data-club]");
+  // Only the club switch: <body> carries data-club too, so a bare [data-club] matched every click.
+  const clubButton = event.target.closest("#clubs [data-club]");
   if (clubButton) {
     state.club = clubButton.dataset.club;
     state.focus = null;

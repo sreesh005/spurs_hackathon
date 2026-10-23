@@ -28,7 +28,9 @@ Sarang's part of the Spurs² hackathon project.
 | Notes turn into ScorePlay clips | A note on the live recording became a playable clip in ScorePlay immediately, frame-accurate. |
 | Cost | About 150 TwelveLabs calls per match (versus about 315 if every 30 seconds were checked). |
 
-**Not done yet:** grouping several camera angles of one play (TwelveLabs Jockey, built but not tried for real), replacing the quick clip once the full clip arrives, and vertical 9:16 crops for social.
+**Not done yet:** grouping several camera angles of one play in ScorePlay or TwelveLabs (TwelveLabs Jockey, built but not tried for real), replacing the quick clip once the full clip arrives, and vertical 9:16 crops for social.
+
+**On the desk:** the Next Post desk's Live dots tab (`live_clips.py` at the repo root) reads `runs/live_*.jsonl` and `clips/` as this pipeline writes them. It shows each player's clips as they land, shows the full clip in place of the quick one, and groups angles of one play by match time, capture time and replays. It doesn't write anything back to ScorePlay.
 
 ## Running it (for whoever has the laptop set up)
 

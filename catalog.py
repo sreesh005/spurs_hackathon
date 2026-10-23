@@ -452,6 +452,14 @@ def build_library(env: dict[str, str] | None = None) -> dict:
     if not env.get("SCOREPLAY_API_KEY"):
         raise RuntimeError("SCOREPLAY_API_KEY is empty in .env")
     raw_players, raw_media = fetch_scoreplay(env)
+    library = assemble_library(raw_players, raw_media)
+    DATA.mkdir(exist_ok=True)
+    LIBRARY_PATH.write_text(json.dumps(library), encoding="utf-8")
+    return library
+
+
+def assemble_library(raw_players: list, raw_media: list) -> dict:
+    """Turn raw ScorePlay players and media into the desk library. No network, no file writes."""
     by_id = {}
     for raw in raw_players:
         full = raw.get("full_name") or ""
@@ -481,6 +489,10 @@ def build_library(env: dict[str, str] | None = None) -> dict:
             "video": raw.get("compressed_url") or "",
             "duration": (raw.get("video") or {}).get("duration") or raw.get("duration") or 0,
             "players": roster_players or players,
+            # Capture clock (ms since midnight) and day: how angles of one play are matched in live_clips.py.
+            "tc_in": raw.get("tc_in"),
+            "tc_out": raw.get("tc_out"),
+            "date": raw.get("date") or "",
         }
         if raw.get("type") == "video":
             videos.append(item)
@@ -522,6 +534,9 @@ def build_library(env: dict[str, str] | None = None) -> dict:
                 "thumb": video["thumb"],
                 "video": video["video"],
                 "duration": video["duration"],
+                "tc_in": video["tc_in"],
+                "tc_out": video["tc_out"],
+                "date": video["date"],
             }
         )
         for player in players:
@@ -684,8 +699,6 @@ def build_library(env: dict[str, str] | None = None) -> dict:
         "plays": plays,
         "photos": slim_photos[:480],
     }
-    DATA.mkdir(exist_ok=True)
-    LIBRARY_PATH.write_text(json.dumps(library), encoding="utf-8")
     return library
 
 

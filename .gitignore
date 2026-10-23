@@ -6,3 +6,4 @@ _catalog.json
 _summary.json
 _event.json
 _players.txt
+.pytest_cache/
