@@ -6,3 +6,7 @@ Scripts behind the Live dots tab. Run from this folder with the project venv (ul
 - `find_clip.py full_rec.mp4 --len 90` : cuts the longest main-camera stretch
 - `patterns.py` : formation triggers (overload, overlap, line break, counter, switch, press)
 Model weights (yolov8s.pt) and recordings are not committed.
+
+- `demo.sh start [clip.mp4]` : starts the UI server, transcript and dots together in the background (one command); `demo.sh stop|status|logs`
+
+The 60-second demo clip is live/clips/demo90.mp4 (demo.sh uses it by default). Delete it from the repo after the event.
