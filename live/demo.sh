@@ -4,7 +4,7 @@
 # Uses whatever python3 is active (activate your venv first). Starts the UI server, the Twelve Labs transcript and the
 # looping dots in the background, restarts any that crash, keeps the machine awake (Mac), logs to live/run/.
 LIVE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(cd "$LIVE/.." && pwd)"; RUN="$LIVE/run"; mkdir -p "$RUN"
-CLIP="${2:-${CLIP:-$ROOT/demo90.mp4}}"
+CLIP="${2:-${CLIP:-$LIVE/clips/demo90.mp4}}"
 keep() { local name=$1 dir=$2; shift 2
   ( cd "$dir" && while true; do "$@" >>"$RUN/$name.log" 2>&1; echo "[$(date +%T)] $name exited, restarting in 3s" >>"$RUN/$name.log"; sleep 3; done ) &
   echo $! >"$RUN/$name.pid"; }
