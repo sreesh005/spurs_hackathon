@@ -29,12 +29,13 @@ function livePitchLines() {
 }
 
 function liveHtml() {
-  const mode = (() => { try { return localStorage.getItem("liveMode") === "map" ? "map" : "video"; } catch (e) { return "video"; } })();
+  const mode = (() => { try { const m = localStorage.getItem("liveMode"); return ["video", "map", "pip", "pipmap"].includes(m) ? m : "pip"; } catch (e) { return "pip"; } })();
   return `<section class="live">
     <div class="stage-bar">
       <div class="seg" id="live-seg">
         <button type="button" data-mode="video" class="${mode === "video" ? "on" : ""}">Video</button>
         <button type="button" data-mode="map" class="${mode === "map" ? "on" : ""}">Dots</button>
+        <button type="button" data-mode="pip" class="${mode === "pip" || mode === "pipmap" ? "on" : ""}">Video + dots</button>
       </div>
       <button type="button" class="ghost" id="live-menu">Menu</button>
     </div>
@@ -347,24 +348,28 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("click", (event) => {
   const b = event.target.closest?.("#live-seg [data-mode]");
-  if (b) { liveSetMode(b.dataset.mode); return; }
+  if (b) { const st0 = document.getElementById("live-stage"); liveSetMode(b.dataset.mode === "pip" && st0?.classList.contains("m-pipmap") ? "pipmap" : b.dataset.mode); return; }
   if (event.target.closest?.("#live-menu")) document.body.classList.toggle("show-nav");
 });
 
+function liveFlip() {
+  const st = document.getElementById("live-stage"); if (!st) return;
+  const cur = ["video", "map", "pip", "pipmap"].find((m) => st.classList.contains("m-" + m));
+  liveSetMode({ video: "map", map: "video", pip: "pipmap", pipmap: "pip" }[cur] || "pip");
+}
 function liveSetMode(m) {
   const st = document.getElementById("live-stage"); if (!st) return;
   st.className = "stage m-" + m;
-  document.querySelectorAll("#live-seg button").forEach((x) => x.classList.toggle("on", x.dataset.mode === m));
+  document.querySelectorAll("#live-seg button").forEach((x) => x.classList.toggle("on", x.dataset.mode === (m === "pipmap" ? "pip" : m)));
   try { localStorage.setItem("liveMode", m); } catch (e) { /* fine */ }
 }
 document.addEventListener("click", (event) => {
   const sw = event.target.closest?.("[data-swap]"), st = document.getElementById("live-stage");
-  if (sw && st) { event.preventDefault(); liveSetMode(st.classList.contains("m-map") ? "video" : "map"); return; }
-  // in Dots view the video is the small inset: click it to bring the video back
-  const inset = event.target.closest?.(".stage.m-map .live-video");
-  if (inset) liveSetMode("video");
+  if (sw && st) { event.preventDefault(); liveFlip(); return; }
+  // the small inset picture swaps places with the big one when clicked (the map inset keeps its own dot clicks)
+  if (event.target.closest?.(".stage.m-pipmap .live-video")) liveSetMode("pip");
 });
 document.addEventListener("keydown", (event) => {
   if (event.key.toLowerCase() !== "m" || /input|textarea|select/i.test(event.target.tagName) || event.metaKey || event.ctrlKey) return;
-  const st = document.getElementById("live-stage"); if (st) liveSetMode(st.classList.contains("m-map") ? "video" : "map");
+  liveFlip();
 });

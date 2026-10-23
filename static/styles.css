@@ -372,25 +372,32 @@ select {
 .stage .live-pitch-wrap { position: absolute; z-index: 3; }
 .stage .live-pitch { border-radius: 10px; }
 
-.stage.m-video .live-pitch-wrap { right: 12px; bottom: 12px; width: 36%; box-shadow: 0 6px 24px rgba(0,0,0,.6); border-radius: 10px; }
-.stage.m-video .dot { width: 12px; height: 12px; margin: -6px 0 0 -6px; border-width: 1.5px; font-size: 0; }
-.stage.m-video .dot.photo { width: 26px; height: 26px; margin: -13px 0 0 -13px; border-width: 2px; }
-.stage.m-video .dot.photo span { font-size: 8px; line-height: 12px; min-width: 12px; right: -4px; bottom: -4px; }
-.stage.m-video .live-ball { width: 8px; height: 8px; margin: -4px 0 0 -4px; }
-.stage.m-video .live-wait { font-size: 14px; }
-.stage.m-map .live-pitch-wrap { inset: 0; display: grid; place-items: center; background: #0b110d; }
-.stage.m-map .live-pitch { height: 100%; width: auto; aspect-ratio: 105 / 68; max-width: 100%; max-height: 100%; border: 0; border-radius: 0; }
-.stage.m-map .live-video { inset: auto 12px 12px auto; width: 30%; height: auto; aspect-ratio: 16 / 9; z-index: 4; border-radius: 10px; border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0,0,0,.6); }
-.stage.m-map .live-badge, .stage.m-map .live-alert { display: none; }
-.stage.m-video .live-alert { bottom: auto; top: 12px; }
+.stage.m-pip .live-pitch-wrap { right: 12px; bottom: 12px; width: 36%; box-shadow: 0 6px 24px rgba(0,0,0,.6); border-radius: 10px; }
+.stage.m-pip .dot { width: 12px; height: 12px; margin: -6px 0 0 -6px; border-width: 1.5px; font-size: 0; }
+.stage.m-pip .dot.photo { width: 26px; height: 26px; margin: -13px 0 0 -13px; border-width: 2px; }
+.stage.m-pip .dot.photo span { font-size: 8px; line-height: 12px; min-width: 12px; right: -4px; bottom: -4px; }
+.stage.m-pip .live-ball { width: 8px; height: 8px; margin: -4px 0 0 -4px; }
+.stage.m-pip .live-wait { font-size: 14px; }
+.stage.m-pipmap .live-pitch-wrap { inset: 0; display: grid; place-items: center; background: #0b110d; }
+.stage.m-pipmap .live-pitch { height: 100%; width: auto; aspect-ratio: 105 / 68; max-width: 100%; max-height: 100%; border: 0; border-radius: 0; }
+.stage.m-pipmap .live-video { inset: auto 12px 12px auto; width: 30%; height: auto; aspect-ratio: 16 / 9; z-index: 4; border-radius: 10px; border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0,0,0,.6); }
+.stage.m-pipmap .live-badge, .stage.m-pipmap .live-alert { display: none; }
+.stage.m-pip .live-alert { bottom: auto; top: 12px; }
 @media (max-width: 1100px) { .live-mode .desk { grid-template-columns: 1fr; } }
 .stage { width: min(100%, calc(58vh * 16 / 9)); margin: 0 auto; }
 .live-tx { width: min(100%, calc(58vh * 16 / 9)); margin: 0 auto; } .live-pick, .stage-bar { width: min(100%, calc(58vh * 16 / 9)); margin-left: auto; margin-right: auto; }
 .live-tx .tx-lines { max-height: 20vh; }
 
-.stage.m-video .live-pitch-wrap { width: 30%; }
+.stage.m-pip .live-pitch-wrap { width: 30%; }
 .swap { position: absolute; z-index: 6; right: 6px; top: 6px; width: 26px; height: 26px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: rgba(0,0,0,.6); color: #fff; font-size: 14px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity .15s; }
 .stage:hover .swap { opacity: 1; }
-.stage .live-video > .swap { display: none; } .stage.m-map .live-video > .swap { display: block; }
-.stage.m-map .live-video { cursor: pointer; }
-.stage.m-map .live-video { width: 30%; }
+.stage .live-video > .swap { display: none; } .stage.m-pipmap .live-video > .swap { display: block; }
+.stage.m-pipmap .live-video { cursor: pointer; }
+.stage.m-pipmap .live-video { width: 30%; }
+
+.stage.m-video .live-pitch-wrap { display: none; }
+.stage.m-map .live-video { display: none; }
+.stage.m-map .live-pitch-wrap { inset: 0; display: grid; place-items: center; background: #0b110d; }
+.stage.m-map .live-pitch { height: 100%; width: auto; aspect-ratio: 105 / 68; max-width: 100%; max-height: 100%; border: 0; border-radius: 0; }
+.live-pitch-wrap > .swap { display: none; } .stage.m-pip .live-pitch-wrap > .swap { display: block; }
+.stage.m-video .live-video > .swap, .stage.m-pip .live-video > .swap { display: none; }
